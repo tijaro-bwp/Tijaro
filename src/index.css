@@ -1,0 +1,463 @@
+@import "tailwindcss";
+
+/* ── Design tokens (generated pattern; edit values, keep names) ─────────────
+   Raw scales: --{role}-{50..900}. Semantic role tokens: --c-{role}[-variant].
+   Tailwind utilities: bg-primary, text-primary-fg, border-success-line, bg-wholesale-soft, ...
+   Variants: soft (tint bg) · muted (stronger tint) · line (tinted border) · edge (strong tinted border)
+             DEFAULT (solid fill) · hover (solid hover) · fg (coloured text) · strong (text on tints)
+   Neutrals: app, surface-N, fg-N, line-N, contrast, sidebar-N. Mode via html[data-theme], accent via html[data-accent]. */
+@theme inline {
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-4: var(--surface-4);
+  --color-surface-5: var(--surface-5);
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-faint: var(--fg-faint);
+  --color-fg-on-contrast: var(--fg-on-contrast);
+  --color-line-subtle: var(--line-subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-contrast: var(--contrast);
+  --color-contrast-hover: var(--contrast-hover);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-hover: var(--sidebar-hover);
+  --color-sidebar-line: var(--sidebar-line);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-primary-soft: var(--c-primary-soft);
+  --color-primary-muted: var(--c-primary-muted);
+  --color-primary-line: var(--c-primary-line);
+  --color-primary-edge: var(--c-primary-edge);
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-primary-fg: var(--c-primary-fg);
+  --color-primary-strong: var(--c-primary-strong);
+  --color-success-soft: var(--c-success-soft);
+  --color-success-muted: var(--c-success-muted);
+  --color-success-line: var(--c-success-line);
+  --color-success-edge: var(--c-success-edge);
+  --color-success: var(--c-success);
+  --color-success-hover: var(--c-success-hover);
+  --color-success-fg: var(--c-success-fg);
+  --color-success-strong: var(--c-success-strong);
+  --color-danger-soft: var(--c-danger-soft);
+  --color-danger-muted: var(--c-danger-muted);
+  --color-danger-line: var(--c-danger-line);
+  --color-danger-edge: var(--c-danger-edge);
+  --color-danger: var(--c-danger);
+  --color-danger-hover: var(--c-danger-hover);
+  --color-danger-fg: var(--c-danger-fg);
+  --color-danger-strong: var(--c-danger-strong);
+  --color-warning-soft: var(--c-warning-soft);
+  --color-warning-muted: var(--c-warning-muted);
+  --color-warning-line: var(--c-warning-line);
+  --color-warning-edge: var(--c-warning-edge);
+  --color-warning: var(--c-warning);
+  --color-warning-hover: var(--c-warning-hover);
+  --color-warning-fg: var(--c-warning-fg);
+  --color-warning-strong: var(--c-warning-strong);
+  --color-info-soft: var(--c-info-soft);
+  --color-info-muted: var(--c-info-muted);
+  --color-info-line: var(--c-info-line);
+  --color-info-edge: var(--c-info-edge);
+  --color-info: var(--c-info);
+  --color-info-hover: var(--c-info-hover);
+  --color-info-fg: var(--c-info-fg);
+  --color-info-strong: var(--c-info-strong);
+  --color-wholesale-soft: var(--c-wholesale-soft);
+  --color-wholesale-muted: var(--c-wholesale-muted);
+  --color-wholesale-line: var(--c-wholesale-line);
+  --color-wholesale-edge: var(--c-wholesale-edge);
+  --color-wholesale: var(--c-wholesale);
+  --color-wholesale-hover: var(--c-wholesale-hover);
+  --color-wholesale-fg: var(--c-wholesale-fg);
+  --color-wholesale-strong: var(--c-wholesale-strong);
+  --radius-control: 0.75rem;
+  --radius-card: 1rem;
+  --shadow-card: var(--shadow-card-value);
+  --shadow-pop: var(--shadow-pop-value);
+}
+
+:root {
+  color-scheme: light;
+  --primary-50: #eff6ff;
+  --primary-100: #dbeafe;
+  --primary-200: #bfdbfe;
+  --primary-300: #93c5fd;
+  --primary-400: #60a5fa;
+  --primary-500: #3b82f6;
+  --primary-600: #2563eb;
+  --primary-700: #1d4ed8;
+  --primary-800: #1e40af;
+  --primary-900: #1e3a8a;
+  --success-50: #ecfdf5;
+  --success-100: #d1fae5;
+  --success-200: #a7f3d0;
+  --success-300: #6ee7b7;
+  --success-400: #34d399;
+  --success-500: #10b981;
+  --success-600: #059669;
+  --success-700: #047857;
+  --success-800: #065f46;
+  --success-900: #064e3b;
+  --danger-50: #fef2f2;
+  --danger-100: #fee2e2;
+  --danger-200: #fecaca;
+  --danger-300: #fca5a5;
+  --danger-400: #f87171;
+  --danger-500: #ef4444;
+  --danger-600: #dc2626;
+  --danger-700: #b91c1c;
+  --danger-800: #991b1b;
+  --danger-900: #7f1d1d;
+  --warning-50: #fff7ed;
+  --warning-100: #ffedd5;
+  --warning-200: #fed7aa;
+  --warning-300: #fdba74;
+  --warning-400: #fb923c;
+  --warning-500: #f97316;
+  --warning-600: #ea580c;
+  --warning-700: #c2410c;
+  --warning-800: #9a3412;
+  --warning-900: #7c2d12;
+  --info-50: #faf5ff;
+  --info-100: #f3e8ff;
+  --info-200: #e9d5ff;
+  --info-300: #d8b4fe;
+  --info-400: #c084fc;
+  --info-500: #a855f7;
+  --info-600: #9333ea;
+  --info-700: #7e22ce;
+  --info-800: #6b21a8;
+  --info-900: #581c87;
+  --wholesale-50: #fffbeb;
+  --wholesale-100: #fef3c7;
+  --wholesale-200: #fde68a;
+  --wholesale-300: #fcd34d;
+  --wholesale-400: #fbbf24;
+  --wholesale-500: #f59e0b;
+  --wholesale-600: #d97706;
+  --wholesale-700: #b45309;
+  --wholesale-800: #92400e;
+  --wholesale-900: #78350f;
+
+  --app: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --surface-3: #f1f5f9;
+  --surface-4: #e2e8f0;
+  --surface-5: #cbd5e1;
+  --fg: #0f172a;
+  --fg-2: #334155;
+  --fg-3: #475569;
+  --fg-muted: #64748b;
+  --fg-subtle: #94a3b8;
+  --fg-faint: #cbd5e1;
+  --fg-on-contrast: #e2e8f0;
+  --line-subtle: #f1f5f9;
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+  --contrast: #1e293b;
+  --contrast-hover: #334155;
+  --sidebar: #0f172a;
+  --sidebar-hover: #1e293b;
+  --sidebar-line: #1e293b;
+  --sidebar-fg: #cbd5e1;
+  --sidebar-muted: #64748b;
+  --shadow-card-value: 0 1px 2px rgb(15 23 42 / 0.06), 0 1px 3px rgb(15 23 42 / 0.04);
+  --shadow-pop-value: 0 12px 32px -8px rgb(15 23 42 / 0.25);
+  --focus-ring: var(--primary-500);
+
+  --c-primary-soft: var(--primary-50);
+  --c-primary-muted: var(--primary-100);
+  --c-primary-line: var(--primary-200);
+  --c-primary-edge: var(--primary-300);
+  --c-primary: var(--primary-600);
+  --c-primary-hover: var(--primary-700);
+  --c-primary-fg: var(--primary-600);
+  --c-primary-strong: var(--primary-700);
+  --c-success-soft: var(--success-50);
+  --c-success-muted: var(--success-100);
+  --c-success-line: var(--success-200);
+  --c-success-edge: var(--success-300);
+  --c-success: var(--success-600);
+  --c-success-hover: var(--success-700);
+  --c-success-fg: var(--success-600);
+  --c-success-strong: var(--success-700);
+  --c-danger-soft: var(--danger-50);
+  --c-danger-muted: var(--danger-100);
+  --c-danger-line: var(--danger-200);
+  --c-danger-edge: var(--danger-300);
+  --c-danger: var(--danger-600);
+  --c-danger-hover: var(--danger-700);
+  --c-danger-fg: var(--danger-600);
+  --c-danger-strong: var(--danger-700);
+  --c-warning-soft: var(--warning-50);
+  --c-warning-muted: var(--warning-100);
+  --c-warning-line: var(--warning-200);
+  --c-warning-edge: var(--warning-300);
+  --c-warning: var(--warning-600);
+  --c-warning-hover: var(--warning-700);
+  --c-warning-fg: var(--warning-700);
+  --c-warning-strong: var(--warning-800);
+  --c-info-soft: var(--info-50);
+  --c-info-muted: var(--info-100);
+  --c-info-line: var(--info-200);
+  --c-info-edge: var(--info-300);
+  --c-info: var(--info-600);
+  --c-info-hover: var(--info-700);
+  --c-info-fg: var(--info-600);
+  --c-info-strong: var(--info-700);
+  --c-wholesale-soft: var(--wholesale-50);
+  --c-wholesale-muted: var(--wholesale-100);
+  --c-wholesale-line: var(--wholesale-200);
+  --c-wholesale-edge: var(--wholesale-300);
+  --c-wholesale: var(--wholesale-600);
+  --c-wholesale-hover: var(--wholesale-700);
+  --c-wholesale-fg: var(--wholesale-700);
+  --c-wholesale-strong: var(--wholesale-800);
+}
+
+:root[data-accent="indigo"] {
+  --primary-50: #eef2ff;
+  --primary-100: #e0e7ff;
+  --primary-200: #c7d2fe;
+  --primary-300: #a5b4fc;
+  --primary-400: #818cf8;
+  --primary-500: #6366f1;
+  --primary-600: #4f46e5;
+  --primary-700: #4338ca;
+  --primary-800: #3730a3;
+  --primary-900: #312e81;
+}
+:root[data-accent="teal"] {
+  --primary-50: #f0fdfa;
+  --primary-100: #ccfbf1;
+  --primary-200: #99f6e4;
+  --primary-300: #5eead4;
+  --primary-400: #2dd4bf;
+  --primary-500: #14b8a6;
+  --primary-600: #0d9488;
+  --primary-700: #0f766e;
+  --primary-800: #115e59;
+  --primary-900: #134e4a;
+}
+:root[data-accent="graphite"] {
+  --primary-50: #f8fafc;
+  --primary-100: #f1f5f9;
+  --primary-200: #e2e8f0;
+  --primary-300: #cbd5e1;
+  --primary-400: #94a3b8;
+  --primary-500: #64748b;
+  --primary-600: #334155;
+  --primary-700: #1e293b;
+  --primary-800: #0f172a;
+  --primary-900: #020617;
+}
+:root[data-accent="graphite"] { --focus-ring: #64748b; }
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app: #0a0f1c;
+  --surface: #111827;
+  --surface-2: #151e30;
+  --surface-3: #1b2539;
+  --surface-4: #253047;
+  --surface-5: #334158;
+  --fg: #f1f5f9;
+  --fg-2: #d5dde8;
+  --fg-3: #b4bfcd;
+  --fg-muted: #8f9bad;
+  --fg-subtle: #6b788c;
+  --fg-faint: #475467;
+  --fg-on-contrast: #e2e8f0;
+  --line-subtle: #1b2539;
+  --line: #263147;
+  --line-strong: #364259;
+  --contrast: #2b3750;
+  --contrast-hover: #3a4763;
+  --sidebar: #0b1120;
+  --sidebar-hover: #182136;
+  --sidebar-line: #182136;
+  --sidebar-fg: #cbd5e1;
+  --sidebar-muted: #64748b;
+  --shadow-card-value: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pop-value: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  --focus-ring: var(--primary-400);
+
+  --c-primary-soft: color-mix(in oklab, var(--primary-500) 14%, var(--surface));
+  --c-primary-muted: color-mix(in oklab, var(--primary-500) 24%, var(--surface));
+  --c-primary-line: color-mix(in oklab, var(--primary-500) 38%, var(--surface));
+  --c-primary-edge: color-mix(in oklab, var(--primary-400) 55%, var(--surface));
+  --c-primary: var(--primary-600);
+  --c-primary-hover: var(--primary-500);
+  --c-primary-fg: var(--primary-400);
+  --c-primary-strong: var(--primary-300);
+  --c-success-soft: color-mix(in oklab, var(--success-500) 14%, var(--surface));
+  --c-success-muted: color-mix(in oklab, var(--success-500) 24%, var(--surface));
+  --c-success-line: color-mix(in oklab, var(--success-500) 38%, var(--surface));
+  --c-success-edge: color-mix(in oklab, var(--success-400) 55%, var(--surface));
+  --c-success: var(--success-600);
+  --c-success-hover: var(--success-500);
+  --c-success-fg: var(--success-400);
+  --c-success-strong: var(--success-300);
+  --c-danger-soft: color-mix(in oklab, var(--danger-500) 14%, var(--surface));
+  --c-danger-muted: color-mix(in oklab, var(--danger-500) 24%, var(--surface));
+  --c-danger-line: color-mix(in oklab, var(--danger-500) 38%, var(--surface));
+  --c-danger-edge: color-mix(in oklab, var(--danger-400) 55%, var(--surface));
+  --c-danger: var(--danger-600);
+  --c-danger-hover: var(--danger-500);
+  --c-danger-fg: var(--danger-400);
+  --c-danger-strong: var(--danger-300);
+  --c-warning-soft: color-mix(in oklab, var(--warning-500) 14%, var(--surface));
+  --c-warning-muted: color-mix(in oklab, var(--warning-500) 24%, var(--surface));
+  --c-warning-line: color-mix(in oklab, var(--warning-500) 38%, var(--surface));
+  --c-warning-edge: color-mix(in oklab, var(--warning-400) 55%, var(--surface));
+  --c-warning: var(--warning-600);
+  --c-warning-hover: var(--warning-500);
+  --c-warning-fg: var(--warning-400);
+  --c-warning-strong: var(--warning-300);
+  --c-info-soft: color-mix(in oklab, var(--info-500) 14%, var(--surface));
+  --c-info-muted: color-mix(in oklab, var(--info-500) 24%, var(--surface));
+  --c-info-line: color-mix(in oklab, var(--info-500) 38%, var(--surface));
+  --c-info-edge: color-mix(in oklab, var(--info-400) 55%, var(--surface));
+  --c-info: var(--info-600);
+  --c-info-hover: var(--info-500);
+  --c-info-fg: var(--info-400);
+  --c-info-strong: var(--info-300);
+  --c-wholesale-soft: color-mix(in oklab, var(--wholesale-500) 14%, var(--surface));
+  --c-wholesale-muted: color-mix(in oklab, var(--wholesale-500) 24%, var(--surface));
+  --c-wholesale-line: color-mix(in oklab, var(--wholesale-500) 38%, var(--surface));
+  --c-wholesale-edge: color-mix(in oklab, var(--wholesale-400) 55%, var(--surface));
+  --c-wholesale: var(--wholesale-600);
+  --c-wholesale-hover: var(--wholesale-500);
+  --c-wholesale-fg: var(--wholesale-400);
+  --c-wholesale-strong: var(--wholesale-300);
+}
+:root[data-theme="dark"][data-accent="graphite"] {
+  --c-primary: #475569;
+  --c-primary-hover: #64748b;
+  --c-primary-fg: #cbd5e1;
+  --c-primary-strong: #e2e8f0;
+}
+
+@layer base {
+  html, body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  body {
+    background-color: var(--app);
+    color: var(--fg);
+  }
+  /* Tailwind 4 defaults borders to currentColor; use the theme line colour instead. */
+  *, ::after, ::before, ::backdrop, ::file-selector-button {
+    border-color: var(--line, currentColor);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--fg-subtle);
+  }
+  /* Visible keyboard focus everywhere (POS is keyboard-heavy). */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background-color: var(--c-primary);
+    color: #fff;
+  }
+}
+
+/* ── Shared primitives ─────────────────────────────────────────────────────
+   Use these (or the React wrappers in src/components/ui) for new/migrated UI. */
+@layer components {
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+    min-height: 2.75rem; padding: 0.5rem 1rem;
+    border-radius: var(--radius-control); border: 1px solid transparent;
+    font-weight: 700; font-size: 0.875rem; line-height: 1.25rem;
+    transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s, transform .1s;
+    cursor: pointer; user-select: none;
+  }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-sm { min-height: 2.25rem; padding: 0.375rem 0.75rem; font-size: 0.75rem; }
+  .btn-lg { min-height: 3.25rem; padding: 0.75rem 1.25rem; font-size: 1rem; }
+  .btn-primary { background: var(--c-primary); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--c-primary-hover); }
+  .btn-secondary { background: var(--surface); color: var(--fg-2); border-color: var(--line); }
+  .btn-secondary:hover:not(:disabled) { background: var(--surface-3); color: var(--fg); }
+  .btn-ghost { background: transparent; color: var(--fg-3); }
+  .btn-ghost:hover:not(:disabled) { background: var(--surface-3); color: var(--fg); }
+  .btn-danger { background: var(--c-danger); color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: var(--c-danger-hover); }
+  .btn-success { background: var(--c-success); color: #fff; }
+  .btn-success:hover:not(:disabled) { background: var(--c-success-hover); }
+  .btn-wholesale { background: var(--c-wholesale); color: #fff; }
+  .btn-wholesale:hover:not(:disabled) { background: var(--c-wholesale-hover); }
+
+  .input {
+    display: block; width: 100%; min-height: 2.75rem; padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-control); border: 1px solid var(--line);
+    background: var(--surface); color: var(--fg); font-size: 0.875rem;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .input:focus { outline: none; border-color: var(--c-primary); box-shadow: 0 0 0 3px var(--c-primary-muted); }
+  .label { display: block; margin-bottom: 0.25rem; font-size: 0.75rem; font-weight: 700; color: var(--fg-3); text-transform: uppercase; letter-spacing: .05em; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-card-value);
+  }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    padding: 0.125rem 0.5rem; border-radius: 9999px; border: 1px solid transparent;
+    font-size: 0.6875rem; font-weight: 800; line-height: 1rem; text-transform: uppercase; letter-spacing: .03em;
+  }
+  .badge-neutral   { background: var(--surface-3);         color: var(--fg-3);              border-color: var(--line); }
+  .badge-primary   { background: var(--c-primary-soft);    color: var(--c-primary-strong);  border-color: var(--c-primary-line); }
+  .badge-success   { background: var(--c-success-soft);    color: var(--c-success-strong);  border-color: var(--c-success-line); }
+  .badge-danger    { background: var(--c-danger-soft);     color: var(--c-danger-strong);   border-color: var(--c-danger-line); }
+  .badge-warning   { background: var(--c-warning-soft);    color: var(--c-warning-strong);  border-color: var(--c-warning-line); }
+  .badge-info      { background: var(--c-info-soft);       color: var(--c-info-strong);     border-color: var(--c-info-line); }
+  .badge-wholesale { background: var(--c-wholesale-muted); color: var(--c-wholesale-strong); border-color: var(--c-wholesale-edge); }
+
+  .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center; padding: 0.75rem; background: rgb(2 6 23 / 0.55); }
+  @media (min-width: 640px) { .modal-backdrop { align-items: center; padding: 1rem; } }
+  .modal-panel {
+    display: flex; flex-direction: column; width: 100%; max-height: 90dvh; overflow: hidden;
+    background: var(--surface); color: var(--fg); border: 1px solid var(--line);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-pop-value);
+  }
+}
+
+/* Modern minimal scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-subtle);
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

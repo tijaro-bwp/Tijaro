@@ -1,0 +1,25 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "billkaro",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:\\billkaro"],
+      "port": 3000
+    },
+    {
+      "name": "EdgeX POS (Main App)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5174"],
+      "cwd": "C:\\sanitary-pos",
+      "port": 5174
+    },
+    {
+      "name": "Superadmin Dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "cwd": "C:\\sanitary-pos\\superadmin",
+      "port": 5173
+    }
+  ]
+}
