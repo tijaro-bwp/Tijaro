@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -44,6 +44,15 @@ const AuditLogs = lazy(() => import('./pages/admin/AuditLogs'))
 const EmailBroadcast = lazy(() => import('./pages/admin/EmailBroadcast'))
 const ResetPassword = lazy(() => import('./pages/admin/ResetPassword'))
 
+// Customer portal (public, mobile number + PIN; see docs/CUSTOMER_PORTAL.md)
+const CustomerPortal = lazy(() => import('./pages/portal/CustomerPortal'))
+
+// The install prompt is for shop staff, not for customers using the portal.
+function StaffInstallPrompt() {
+  const { pathname } = useLocation()
+  return pathname.startsWith('/c/') ? null : <PWAInstallPrompt />
+}
+
 function PageFallback() {
   return (
     <div className="flex h-dvh items-center justify-center bg-app">
@@ -57,11 +66,12 @@ function App() {
     <AuthProvider>
       <ThemeProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <PWAInstallPrompt />
+        <StaffInstallPrompt />
         <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/" element={<Login />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="/c/:slug/*" element={<CustomerPortal />} />
 
             {/* ── Superadmin Platform Portal (Role: superadmin only) ── */}
             <Route

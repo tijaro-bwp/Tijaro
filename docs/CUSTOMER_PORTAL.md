@@ -8,7 +8,7 @@ their bills, ledger statement and current balance. It is read-only.
 | Database | `sql/customer_portal_migration.sql` |
 | Backend | `supabase/functions/portal-api/index.ts` (Edge Function) |
 | Browser client | `src/services/portalApi.js` |
-| Customer pages | Phase 3 — route `/c/:slug` (not built yet) |
+| Customer pages | `src/pages/portal/*` — route `/c/:slug/*` (login, home, bills, bill, statement, change PIN) |
 | Staff controls | `src/components/CustomerPortalAccess.jsx` (customer ledger → **Portal Login**), `src/components/CustomerPortalSettings.jsx` (Settings → **Customer Portal**) |
 
 ## Setup
@@ -65,6 +65,20 @@ Responses are `{ data, error }`; errors carry `message`, `status` and sometimes 
 Staff actions accept admin, manager and cashier sessions (and superadmin impersonation) of the
 customer's own shop.
 
+## Customer pages
+
+`/c/<slug>` is public and sits outside `ProtectedRoute`/`Layout` (lazy chunk `CustomerPortal`).
+
+- **Login** — shop name/logo from `shop_info`, mobile + PIN, "ask the shop" with a call link.
+- **Home** — balance (owe / all clear / advance), last bill and payment, recent activity.
+- **Bills** — period filter, paging; **bill page** — items, discount, paid, due; Print / save as PDF.
+- **Statement** — preset or custom dates, opening/closing, debits/credits, running balance; Print / PDF.
+- **Change PIN** (account menu), plus Call / WhatsApp shop and Sign out.
+
+The customer token is stored as `portal_token_<slug>` in localStorage; an expired or revoked
+session drops back to the login page. Pages send `noindex` (meta tag and `X-Robots-Tag` from
+`vercel.json`) and the staff "install app" prompt is hidden under `/c/`.
+
 ## Security
 
 - **Separate from staff auth.** Customers never get a row in `sessions` or the shop-wide
@@ -101,6 +115,4 @@ customer ledger page (`src/pages/CustomerLedger.jsx`); both exclude quotations, 
 
 ## Not built yet
 
-- Phase 3 — customer pages at `/c/:slug`: login, home, bills, bill detail + PDF, statement + PDF,
-  change PIN. Must stay outside `ProtectedRoute`/`Layout` and be `noindex`.
 - Plan gating (`customer_portal` feature flag).
