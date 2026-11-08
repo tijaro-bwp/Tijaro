@@ -5,7 +5,10 @@ import { supabase, rlsSession } from '../services/supabase'
 import { db as localDB } from '../services/db'
 import { hashPassword } from '../utils/authUtils'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ShieldCheck, Zap, PhoneCall, Eye, EyeOff } from 'lucide-react'
+import {
+  PhoneCall, Eye, EyeOff, User, Lock, ArrowRight, CloudOff, ScanBarcode, Boxes,
+  CircleAlert, CircleCheck, WifiOff,
+} from 'lucide-react'
 import { BRAND } from '../config/brand.js'
 
 const IMPERSONATION_HANDOFF_KEY = 'edgex_impersonation_handoff'
@@ -15,7 +18,19 @@ function Login() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('') // success/info messages (e.g. offline login), shown in green
   const [loading, setLoading] = useState(false)
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
 
   const [logoUrl, setLogoUrl] = useState(() => {
     const lastShopId = localStorage.getItem('last_shop_id')
@@ -117,6 +132,7 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault()
     setError('')
+    setNotice('')
     setLoading(true)
 
     const isOffline = !navigator.onLine
@@ -131,7 +147,7 @@ function Login() {
         )
 
         if (!localUser) {
-          setError('⚠️ Offline: No saved login found for this username. Please connect to internet and login once first.')
+          setError('Offline: No saved login found for this username. Please connect to internet and login once first.')
           setLoading(false)
           return
         }
@@ -167,7 +183,7 @@ function Login() {
           permissions: localUser.permissions || []
         })
 
-        setError('✅ Logged in offline. Some features (sync, reports) require internet.')
+        setNotice('Signed in offline. Sync and reports need internet.')
         setTimeout(() => navigate('/dashboard'), 1500)
       } catch (err) {
         setError('Offline login failed. Please connect to internet.')
@@ -359,7 +375,7 @@ function Login() {
         )
 
         if (!localUser) {
-          setError('⚠️ No offline data found. Please connect to internet and login once first to enable offline access.')
+          setError('No offline data found. Please connect to internet and login once first to enable offline access.')
           setLoading(false)
           return
         }
@@ -394,7 +410,7 @@ function Login() {
             permissions: localUser.permissions || []
           })
 
-          setError('✅ Logged in offline. Some features (sync, reports) require internet.')
+          setNotice('Signed in offline. Sync and reports need internet.')
 
           setTimeout(() => {
             navigate('/dashboard')
@@ -411,187 +427,220 @@ function Login() {
     }
   }
 
+  // Show the shop's own name/logo for a returning device; otherwise the platform brand.
+  const rememberedShop = platformName !== BRAND.appName || logoUrl !== BRAND.logo
+  const supportTel = `tel:${String(BRAND.supportPhone).replace(/[^\d+]/g, '')}`
+
+  const features = [
+    { icon: CloudOff, title: 'Keeps selling offline', text: 'Sales are saved on the device and sync when the internet is back.' },
+    { icon: ScanBarcode, title: 'Fast checkout', text: 'Barcode search, quick quantities and printed or shared receipts.' },
+    { icon: Boxes, title: 'Stock and ledgers in one place', text: 'Inventory, purchases, customers and suppliers stay in step.' },
+  ]
+
   return (
-    <div className="min-h-screen bg-surface-2 flex">
-      {/* Left Side - Branding */}
-      <div className="hidden lg:flex w-1/2 bg-[url('/inventory-bg.png')] bg-cover bg-left relative p-12 flex-col justify-between overflow-hidden">
-        <div className="absolute inset-0 bg-contrast/60 z-0" />
-        <div className="absolute top-0 right-0 w-96 h-96 bg-primary/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-success/20 rounded-full blur-3xl translate-y-1/3 -translate-x-1/3" />
+    <div className="min-h-dvh flex bg-app text-fg">
+      {/* Brand panel (desktop) */}
+      <aside className="hidden lg:flex lg:w-[46%] xl:w-1/2 relative overflow-hidden bg-primary text-white p-12 xl:p-16 [@media(max-height:760px)]:py-8 flex-col justify-between gap-8">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 opacity-20"
+          style={{ backgroundImage: 'radial-gradient(rgb(255 255 255 / 0.55) 1px, transparent 1px)', backgroundSize: '22px 22px' }}
+        />
+        <div aria-hidden="true" className="absolute -top-40 -right-40 w-[28rem] h-[28rem] rounded-full bg-white/10 blur-3xl" />
+        <div aria-hidden="true" className="absolute -bottom-48 -left-32 w-[32rem] h-[32rem] rounded-full bg-black/20 blur-3xl" />
 
-        <div className="relative z-10">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="flex items-center gap-3 mb-16"
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="relative flex items-center gap-3"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-white p-1.5 shadow-lg flex items-center justify-center overflow-hidden">
+            <img src={BRAND.logo} alt="" className="max-w-full max-h-full object-contain" />
+          </div>
+          <span className="text-xl font-extrabold tracking-tight">{BRAND.appName}</span>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="relative max-w-lg"
+        >
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/70 mb-4 [@media(max-height:760px)]:mb-2">{BRAND.tagline}</p>
+          <h1 className="text-4xl xl:text-5xl [@media(max-height:760px)]:text-4xl font-extrabold leading-[1.1] tracking-tight mb-5 [@media(max-height:760px)]:mb-3">
+            Sell faster.
+            <span className="block text-white/75">Know your shop better.</span>
+          </h1>
+          <p className="text-base xl:text-lg text-white/75 mb-10 [@media(max-height:760px)]:mb-6 max-w-md">
+            Billing, stock and accounts for your shop, on any device, even when the internet drops.
+          </p>
+
+          <ul className="space-y-5 [@media(max-height:760px)]:space-y-3">
+            {features.map(({ icon: Icon, title, text }) => (
+              <li key={title} className="flex items-start gap-4">
+                <span className="shrink-0 w-11 h-11 rounded-xl bg-white/15 ring-1 ring-white/20 flex items-center justify-center">
+                  <Icon size={20} aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block font-semibold">{title}</span>
+                  <span className="block text-sm text-white/70 [@media(max-height:760px)]:hidden">{text}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </motion.div>
+
+        <div className="relative flex flex-wrap items-center justify-between gap-4 text-sm text-white/70">
+          <span>Developed by {BRAND.developerCredit}</span>
+          <a
+            href={supportTel}
+            className="inline-flex items-center gap-2 rounded-lg px-3 py-2 bg-white/10 ring-1 ring-white/20 hover:bg-white/15 text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
-            <div className="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 p-2 shadow-xl flex items-center justify-center overflow-hidden">
-              <img src={logoUrl} alt={platformName} className="max-w-full max-h-full object-contain drop-shadow-md" />
+            <PhoneCall size={14} aria-hidden="true" />
+            <span className="font-medium">Support: {BRAND.supportPhone}</span>
+          </a>
+        </div>
+      </aside>
+
+      {/* Sign-in */}
+      <main className="flex-1 flex flex-col min-w-0">
+        <div className="flex items-center justify-between gap-3 px-5 sm:px-8 pt-5">
+          <div className="flex items-center gap-2 lg:invisible">
+            <div className="w-9 h-9 rounded-xl bg-surface border border-line p-1 flex items-center justify-center overflow-hidden">
+              <img src={BRAND.logo} alt="" className="max-w-full max-h-full object-contain" />
             </div>
-            <span className="text-2xl font-black text-white tracking-widest uppercase">{platformName}</span>
-          </motion.div>
+            <span className="font-extrabold tracking-tight text-fg">{BRAND.appName}</span>
+          </div>
+          {!online && (
+            <span className="badge badge-warning" role="status">
+              <WifiOff size={12} aria-hidden="true" /> Offline
+            </span>
+          )}
+        </div>
 
+        <div className="flex-1 flex items-center justify-center px-5 sm:px-8 py-10">
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.6, delay: 0.2 }}
-            className="max-w-xl"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="w-full max-w-sm"
           >
-            <h1 className="text-5xl font-black text-white leading-tight mb-6">
-              Smart Retail Management
-              <span className="block text-primary-fg">Simplified.</span>
-            </h1>
-            <p className="text-lg text-white/60 mb-12">
-              Enterprise-grade POS system with bank-level security and multi-tenant isolation.
+            {rememberedShop && (
+              <div className="w-16 h-16 mb-6 rounded-2xl bg-surface border border-line shadow-sm p-1.5 flex items-center justify-center overflow-hidden">
+                <img src={logoUrl} alt={platformName} className="max-w-full max-h-full object-contain" />
+              </div>
+            )}
+
+            <h2 className="text-3xl font-extrabold tracking-tight text-fg">Welcome back</h2>
+            <p className="mt-2 text-fg-muted">
+              {rememberedShop ? <>Sign in to <span className="font-semibold text-fg-2">{platformName}</span></> : 'Sign in to your shop to continue'}
             </p>
 
-            <div className="space-y-6">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Zap className="text-primary-fg" size={20} />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold">Lightning Fast</h3>
-                  <p className="text-sm text-white/60">Offline-first architecture</p>
+            {!online && (
+              <p className="mt-4 text-sm text-warning-strong bg-warning-soft border border-warning-line rounded-xl px-4 py-3">
+                You're offline. You can still sign in if you've signed in on this device before.
+              </p>
+            )}
+
+            <form onSubmit={handleLogin} className="mt-8 space-y-5">
+              <div>
+                <label htmlFor="login-username" className="block text-sm font-semibold text-fg-2 mb-1.5">Email or username</label>
+                <div className="relative">
+                  <User size={18} aria-hidden="true" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none" />
+                  <input
+                    id="login-username"
+                    type="text"
+                    placeholder="you@example.com or username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    autoFocus
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="username"
+                    className="input min-h-12 pl-11 text-base"
+                  />
                 </div>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
-                  <ShieldCheck className="text-success-fg" size={20} />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold">Enterprise Security</h3>
-                  <p className="text-sm text-white/60">Row-level security & data encryption</p>
+
+              <div>
+                <label htmlFor="login-password" className="block text-sm font-semibold text-fg-2 mb-1.5">Password</label>
+                <div className="relative">
+                  <Lock size={18} aria-hidden="true" className="absolute left-3.5 top-1/2 -translate-y-1/2 text-fg-subtle pointer-events-none" />
+                  <input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="input min-h-12 pl-11 pr-12 text-base"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg flex items-center justify-center text-fg-subtle hover:text-fg hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-primary"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
               </div>
-            </div>
+
+              <AnimatePresence initial={false}>
+                {(error || notice) && (
+                  <motion.div
+                    key={error ? 'error' : 'notice'}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    role={error ? 'alert' : 'status'}
+                    className={`flex items-start gap-2.5 text-sm font-medium rounded-xl px-4 py-3 border ${
+                      error
+                        ? 'text-danger-strong bg-danger-soft border-danger-line'
+                        : 'text-success-strong bg-success-soft border-success-line'
+                    }`}
+                  >
+                    {error
+                      ? <CircleAlert size={18} aria-hidden="true" className="shrink-0 mt-px" />
+                      : <CircleCheck size={18} aria-hidden="true" className="shrink-0 mt-px" />}
+                    <span>{error || notice}</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button type="submit" disabled={loading} className="btn btn-primary btn-lg w-full shadow-lg shadow-primary/25">
+                {loading ? (
+                  <>
+                    <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />
+                    Signing in…
+                  </>
+                ) : (
+                  <>
+                    Sign in
+                    <ArrowRight size={18} aria-hidden="true" />
+                  </>
+                )}
+              </button>
+            </form>
+
+            <p className="mt-8 text-sm text-fg-muted">
+              Forgot your password or need an account?{' '}
+              <a href={supportTel} className="font-semibold text-primary-fg hover:underline whitespace-nowrap">
+                Call {BRAND.supportPhone}
+              </a>
+            </p>
           </motion.div>
         </div>
 
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
-          className="relative z-10"
-        >
-          <p className="text-sm text-white/50 font-medium">
-            Developed with <span className="text-danger-fg">❤︎</span> by {BRAND.developerCredit}
-          </p>
-          <div className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-contrast-hover/50 rounded-lg border border-contrast-hover/50">
-            <PhoneCall size={14} className="text-white/60" />
-            <span className="font-mono text-sm text-fg-on-contrast">Support: {BRAND.supportPhone}</span>
-          </div>
-        </motion.div>
-      </div>
-
-      {/* Right Side - Login Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-contrast relative border-l border-contrast-hover">
-        <div className="absolute top-1/4 right-0 w-64 h-64 bg-primary/10 rounded-full blur-3xl pointer-events-none" />
-
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="w-full max-w-md relative z-10"
-        >
-          {/* Mobile Logo */}
-          <div className="lg:hidden text-center mb-10 flex flex-col items-center">
-            <div className="w-20 h-20 mb-4 rounded-xl border border-contrast-hover p-1 bg-contrast-hover shadow-sm flex items-center justify-center overflow-hidden">
-              <img src={logoUrl} alt={platformName} className="max-w-full max-h-full object-contain" />
-            </div>
-            <h1 className="text-2xl font-black text-white tracking-tight uppercase">{platformName}</h1>
-          </div>
-
-          {/* Desktop Logo */}
-          <div className="hidden lg:flex flex-col items-center mb-10">
-            <div className="w-28 h-28 mb-4 rounded-2xl border-2 border-contrast-hover p-2 bg-contrast-hover/50 backdrop-blur-md shadow-2xl flex items-center justify-center overflow-hidden">
-              <img src={logoUrl} alt={platformName} className="max-w-full max-h-full object-contain drop-shadow-lg" />
-            </div>
-          </div>
-
-          <div className="mb-10 text-center lg:text-left">
-            <h2 className="text-3xl font-bold text-white mb-2">Welcome Back</h2>
-            <p className="text-white/60">Please sign in to your dashboard</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-fg-on-contrast mb-2">Email or Username</label>
-              <input
-                type="text"
-                placeholder="Enter email or username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoComplete="username"
-                className="w-full px-5 py-4 bg-contrast-hover/50 border border-contrast-hover text-white placeholder-white/40 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-contrast-hover transition-all shadow-inner"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-fg-on-contrast mb-2">Password</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Enter password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  className="w-full px-5 py-4 bg-contrast-hover/50 border border-contrast-hover text-white placeholder-white/40 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary focus:bg-contrast-hover transition-all shadow-inner"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-white/50 hover:text-white/80 transition-colors"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginBottom: 20 }}
-                  exit={{ opacity: 0, height: 0, marginBottom: 0 }}
-                  className="overflow-hidden"
-                >
-                  <p className="text-danger-fg text-sm font-medium bg-danger-soft border border-danger-muted px-4 py-3 rounded-xl">
-                    {error}
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-4 bg-primary hover:bg-primary-hover text-white font-bold rounded-xl transition-all disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-primary/30 active:scale-[0.98] flex justify-center items-center h-14"
-            >
-              {loading ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                  className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full"
-                />
-              ) : (
-                'Sign In to Dashboard'
-              )}
-            </button>
-          </form>
-
-          <div className="mt-10 lg:hidden text-center">
-            <div className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-contrast-hover/50 rounded-xl border border-contrast-hover">
-              <PhoneCall size={16} className="text-white/60" />
-              <span className="font-mono font-bold text-white/60">Support: {BRAND.supportPhone}</span>
-            </div>
-          </div>
-        </motion.div>
-      </div>
+        <footer className="lg:hidden px-5 pb-6 text-center text-xs text-fg-subtle">
+          {BRAND.appName} · Developed by {BRAND.developerCredit}
+        </footer>
+      </main>
     </div>
   )
 }
