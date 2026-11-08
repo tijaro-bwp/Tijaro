@@ -7,10 +7,18 @@ import { useAuth } from '../context/AuthContext'
 import { printHTML, getShopBranding } from '../utils/printUtils'
 import { db } from '../services/db'
 import { adjustCustomerBalance, applySaleEffects, must } from '../services/integrity'
-import { generateOutstandingPDF, shareOrDownloadPDF } from '../utils/pdfShare'
+import { generateOutstandingPDF, generateBillPDF, shareOrDownloadPDF } from '../utils/pdfShare'
 import CustomerPortalAccess from '../components/CustomerPortalAccess'
 import { fillPortalLink } from '../services/portalApi'
 import ReceivePaymentModal from '../components/ReceivePaymentModal'
+import { DEFAULT_BILL_TEMPLATE, DEFAULT_PAYMENT_TEMPLATE, fillTemplate, billLines, waPhone, openWhatsApp } from '../utils/billMessages'
+
+// Local calendar day for date inputs (toISOString gives the UTC day, which is
+// yesterday between midnight and 5am in Pakistan).
+const localDay = () => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 // Quotations are price quotes, not debts: they never affect the balance.
 const isQuotation = (s) => s?.sale_type === 'quotation' || s?.payment_type === 'quotation'
@@ -26,7 +34,7 @@ function CustomerLedger() {
     const [ledger, setLedger] = useState([])
     const [showTxModal, setShowTxModal] = useState(false)
     const [txForm, setTxForm] = useState({
-        date: new Date().toISOString().slice(0, 10),
+        date: localDay(),
         bill_number: '',
         sale_amount: '',
         payment_amount: '',
@@ -39,6 +47,7 @@ function CustomerLedger() {
     const [expandedSale, setExpandedSale] = useState(null)
     const [lastPayment, setLastPayment] = useState(null) // for print voucher after recording
     const [showReceive, setShowReceive] = useState(false)
+    const [sendingEntry, setSendingEntry] = useState(false)
     const [selectedIds, setSelectedIds] = useState(new Set())
 
     useEffect(() => {
@@ -201,9 +210,13 @@ function CustomerLedger() {
 
     // balanceAfter: the customer's balance right after this payment (from the
     // ledger row, or the updated balance just after saving).
-    const printPaymentVoucher = (amount, note, date, balanceAfter) => {
+    const printPaymentVoucher = (amount, note, date, balanceAfter, prevBalance) => {
+        printHTML(paymentVoucherHTML(amount, note, date, balanceAfter, prevBalance))
+    }
+
+    const paymentVoucherHTML = (amount, note, date, balanceAfter, prevBalance) => {
         const branding = getShopBranding(user?.shop_id)
-        printHTML(`<html><head><title>Payment Receipt</title>
+        return (`<html><head><title>Payment Receipt</title>
         <style>
           @page{size:80mm auto;margin:2mm}
           *{box-sizing:border-box}
@@ -225,6 +238,7 @@ function CustomerLedger() {
         <div class="row bold" style="font-size:16px;"><span>Amount Received</span><span>Rs. ${Number(amount).toLocaleString()}</span></div>
         ${note ? `<div class="row"><span>Note:</span><span>${note}</span></div>` : ''}
         <hr/>
+        ${prevBalance != null ? `<div class="row"><span>Previous Balance:</span><span>Rs. ${Number(prevBalance).toLocaleString()}</span></div>` : ''}
         <div class="row"><span>Remaining Balance:</span><span class="bold">Rs. ${Number(balanceAfter ?? customer.outstanding_balance ?? 0).toLocaleString()}</span></div>
         <hr/>
         <p class="c" style="font-size:11px;color:#888;">Thank you!</p>
@@ -334,8 +348,54 @@ function CustomerLedger() {
     }
 
     const resetTxForm = () => {
-        setTxForm({ date: new Date().toISOString().slice(0, 10), bill_number: '', sale_amount: '', payment_amount: '', details: '', payment_mode: 'cash', transaction_ref: '', note: '' })
+        setTxForm({ date: localDay(), bill_number: '', sale_amount: '', payment_amount: '', details: '', payment_mode: 'cash', transaction_ref: '', note: '' })
         setShowTxModal(false)
+    }
+
+    // WhatsApp for an entry saved with Add Transaction: payment template when
+    // money was received (with a receipt PDF), bill template for a sale only.
+    const sendEntryWhatsApp = async (entry) => {
+        if (!customer?.phone) return
+        setSendingEntry(true)
+        let shop = null
+        try {
+            if (navigator.onLine) ({ data: shop } = await supabase.from('shops').select('*').eq('id', user.shop_id).maybeSingle())
+        } catch (_) { shop = null }
+        if (!shop) {
+            try { shop = JSON.parse(localStorage.getItem(`shop_settings_${user.shop_id}`) || 'null') } catch (_) { shop = null }
+        }
+        const isPayment = entry.payAmt > 0
+        const billRef = entry.billNumber || ''
+        const template = isPayment
+            ? (shop?.wa_payment_template || DEFAULT_PAYMENT_TEMPLATE)
+            : (shop?.wa_bill_template || DEFAULT_BILL_TEMPLATE)
+        const msg = fillTemplate(fillPortalLink(template, shop), {
+            name: customer.name || 'Customer',
+            shopName: shop?.name || localStorage.getItem(`shop_name_${user.shop_id}`) || '',
+            id: billRef || (isPayment ? '' : 'Manual'),
+            amount: isPayment ? entry.payAmt : entry.saleAmt,
+            billTotal: entry.saleAmt > 0 ? entry.saleAmt : undefined,
+            paidNow: entry.payAmt,
+            billBalance: entry.saleAmt > 0 ? Math.max(0, entry.saleAmt - entry.payAmt) : undefined,
+            previousBalance: entry.prevBalance,
+            newBalance: entry.balanceAfter,
+            bills: isPayment && entry.saleAmt > 0
+                ? billLines([{ sale_id: billRef || 'Manual', net_total: entry.saleAmt, paid_now: entry.payAmt, due: Math.max(0, entry.saleAmt - entry.payAmt) }])
+                : '',
+        })
+        try {
+            if (isPayment) {
+                const blob = await generateBillPDF(paymentVoucherHTML(entry.payAmt, entry.note, entry.date, entry.balanceAfter, entry.prevBalance))
+                await shareOrDownloadPDF(blob, `payment-${String(customer.name || 'customer').replace(/\s+/g, '-')}.pdf`, waPhone(customer.phone), msg)
+            } else {
+                openWhatsApp(customer.phone, msg)
+            }
+        } catch (err) {
+            console.error('WhatsApp send failed:', err)
+            openWhatsApp(customer.phone, msg)
+        } finally {
+            setSendingEntry(false)
+        }
     }
 
     const handleAddTransaction = async (e) => {
@@ -344,7 +404,16 @@ function CustomerLedger() {
         const payAmt = parseFloat(txForm.payment_amount) || 0
         if (saleAmt === 0 && payAmt === 0) return alert('Sale amount ya payment amount mein se koi ek lazmi hai.')
         setSaving(true)
-        const now = txForm.date ? new Date(txForm.date + 'T12:00:00').toISOString() : new Date().toISOString()
+        // Today = the real time (keeps same-day entries in order); a past date = noon of that day.
+        const now = !txForm.date || txForm.date === localDay() ? new Date().toISOString() : new Date(txForm.date + 'T12:00:00').toISOString()
+        const prevBalance = Number(customer?.outstanding_balance) || 0
+        const entryFor = (date) => ({
+            saleAmt, payAmt, date,
+            note: txForm.note.trim() || (payAmt > 0 ? 'Cash Received' : 'Manual Sale Entry'),
+            billNumber: txForm.bill_number.trim(),
+            prevBalance,
+            balanceAfter: prevBalance + saleAmt - payAmt,
+        })
         const commonFields = {
             shop_id: user.shop_id,
             customer_id: id,
@@ -366,9 +435,9 @@ function CustomerLedger() {
             const r = await adjustCustomerBalance(id, delta)
             if (r.ok) setCustomer(c => c ? { ...c, outstanding_balance: (Number(c.outstanding_balance) || 0) + delta } : c)
             else alert('Entry saved, but customer balance update failed: ' + (r.error?.message || 'unknown error'))
-            if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: now, balanceAfter: (Number(customer?.outstanding_balance) || 0) + delta })
+            setLastPayment(entryFor(now))
             resetTxForm()
-            fetchCustomerData()
+            fetchCustomerData({ quiet: true })
         } catch (error) {
             const errMsg = error?.message || String(error)
             if (errMsg.includes('Failed to fetch') || !navigator.onLine) {
@@ -381,9 +450,9 @@ function CustomerLedger() {
                 const delta = saleAmt - payAmt
                 await adjustCustomerBalance(id, delta) // queued as an atomic change
                 setCustomer(c => c ? { ...c, outstanding_balance: (Number(c.outstanding_balance) || 0) + delta } : c)
-                if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: ts, balanceAfter: (Number(customer?.outstanding_balance) || 0) + delta })
+                setLastPayment(entryFor(ts))
                 resetTxForm()
-                fetchCustomerData()
+                fetchCustomerData({ quiet: true })
                 alert('Offline mode: Transaction locally save ho gaya. Online hone par sync hoga! 🔄')
             } else {
                 alert('Error: ' + errMsg)
@@ -833,20 +902,39 @@ function CustomerLedger() {
                 </div>
             </div>
 
-            {/* Payment Success Banner */}
+            {/* Entry saved: send it to the customer / print the receipt */}
             {lastPayment && (
-                <div className="fixed bottom-6 right-6 z-50 bg-success text-white rounded-2xl shadow-2xl p-4 flex items-center gap-4 animate-bounce-once max-w-sm">
-                    <div>
-                        <p className="font-bold text-sm">✅ Payment Recorded!</p>
-                        <p className="text-xs opacity-90">Rs. {Number(lastPayment.amount).toLocaleString()} — {lastPayment.note}</p>
+                <div role="status" className="fixed bottom-4 inset-x-4 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 bg-success text-white rounded-2xl shadow-2xl p-4 sm:max-w-sm">
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="font-bold text-sm">✅ {lastPayment.payAmt > 0 ? 'Payment recorded' : 'Entry saved'}</p>
+                            <p className="text-xs opacity-90">
+                                {lastPayment.saleAmt > 0 && <>Sale Rs. {lastPayment.saleAmt.toLocaleString()} · </>}
+                                {lastPayment.payAmt > 0 && <>Received Rs. {lastPayment.payAmt.toLocaleString()} · </>}
+                                New balance Rs. {Number(lastPayment.balanceAfter).toLocaleString()}
+                            </p>
+                        </div>
+                        <button onClick={() => setLastPayment(null)} aria-label="Close" className="text-white/80 hover:text-white text-xl leading-none">×</button>
                     </div>
-                    <button
-                        onClick={() => printPaymentVoucher(lastPayment.amount, lastPayment.note, lastPayment.date, lastPayment.balanceAfter)}
-                        className="bg-surface text-success-strong font-bold text-xs px-3 py-2 rounded-xl hover:bg-success-soft transition whitespace-nowrap"
-                    >
-                        🖨️ Print
-                    </button>
-                    <button onClick={() => setLastPayment(null)} className="text-white/70 hover:text-white text-lg leading-none ml-1">×</button>
+                    <div className="mt-3 flex gap-2">
+                        {customer?.phone && (
+                            <button
+                                onClick={() => sendEntryWhatsApp(lastPayment)}
+                                disabled={sendingEntry}
+                                className="flex-1 bg-surface text-success-strong font-bold text-sm px-3 py-2 rounded-xl hover:bg-success-soft transition disabled:opacity-60"
+                            >
+                                💬 {sendingEntry ? 'Preparing…' : 'Send WhatsApp'}
+                            </button>
+                        )}
+                        {lastPayment.payAmt > 0 && (
+                            <button
+                                onClick={() => printPaymentVoucher(lastPayment.payAmt, lastPayment.note, lastPayment.date, lastPayment.balanceAfter, lastPayment.prevBalance)}
+                                className="flex-1 bg-white/15 border border-white/40 font-bold text-sm px-3 py-2 rounded-xl hover:bg-white/25 transition"
+                            >
+                                🖨️ Print
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -860,7 +948,12 @@ function CustomerLedger() {
                     <div className="fixed inset-0 bg-black/40 flex items-start sm:items-center justify-center z-50 overflow-y-auto py-4 px-2 sm:px-4">
                         <div className="bg-surface rounded-2xl shadow-2xl p-6 w-full max-w-md">
                             <h2 className="text-xl font-bold text-fg mb-1">➕ Add Transaction</h2>
-                            <p className="text-xs text-fg-subtle mb-4">Sale aur payment ek saath ya alag alag darj karein</p>
+                            <p className="text-xs text-fg-subtle mb-2">Sale aur payment ek saath ya alag alag darj karein</p>
+                            <p className="text-xs text-primary-strong bg-primary-soft border border-primary-line rounded-lg px-3 py-2 mb-4">
+                                Payment kisi bill ke against hai?{' '}
+                                <button type="button" onClick={() => { setShowTxModal(false); setShowReceive(true) }} className="font-bold underline">💵 Receive Payment</button>{' '}
+                                use karein — bill ka baqi aur WhatsApp receipt khud ban jayegi.
+                            </p>
                             <form onSubmit={handleAddTransaction} className="space-y-4">
 
                                 {/* Date + Bill # */}
