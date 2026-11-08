@@ -36,6 +36,25 @@ export const DEFAULT_PAYMENT_TEMPLATE = [
   '[Shop Name]',
 ].join('\n')
 
+// Built-in texts from before balances and links existed. Every shop got this
+// one as its stored default, so a stored copy means "never customised".
+const LEGACY_BILL_TEMPLATES = [
+  'Hello [Name], thank you for shopping at [Shop Name]! Your bill summary for Invoice #[ID] is Rs. [Amount]. Thank you for your business!',
+]
+const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim()
+
+/** The bill template to use: the shop's own, or the current default if empty / an old built-in one. */
+export function resolveBillTemplate(stored) {
+  const t = norm(stored)
+  if (!t || LEGACY_BILL_TEMPLATES.some((l) => norm(l) === t)) return DEFAULT_BILL_TEMPLATE
+  return stored
+}
+
+/** The payment template to use: the shop's own, or the current default. */
+export function resolvePaymentTemplate(stored) {
+  return norm(stored) ? stored : DEFAULT_PAYMENT_TEMPLATE
+}
+
 /** Rs amounts without decimals unless needed: 1500 -> "1,500", 99.5 -> "99.5". */
 export function fmtRs(v) {
   const n = Number(v) || 0

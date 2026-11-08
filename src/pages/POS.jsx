@@ -13,7 +13,7 @@ import { printHTML } from '../utils/printUtils'
 import { getPricingConfig, getShopSettings, isWholesaleEnabled, getUnitPrice, normalizeTier } from '../utils/businessPresets'
 import { BRAND } from '../config/brand.js'
 import { fillPortalLink, createBillLink } from '../services/portalApi'
-import { DEFAULT_BILL_TEMPLATE, fillTemplate, waPhone, openWhatsApp } from '../utils/billMessages'
+import { resolveBillTemplate, fillTemplate, waPhone, openWhatsApp } from '../utils/billMessages'
 const PAKISTANI_PAYMENT_PROVIDERS = [
   { id: 'jazzcash', name: 'JazzCash', icon: '📱' },
   { id: 'easypaisa', name: 'Easypaisa', icon: '🟢' },
@@ -2800,7 +2800,7 @@ function POS() {
                       const formattedPhone = waPhone(lastReceipt.customer.phone)
                       const acc = lastReceipt.account
                       const paidNow = acc ? acc.paid : Math.min(lastReceipt.total, Number(lastReceipt.sale?.paid_amount) || 0)
-                      const template = form.wa_bill_template || DEFAULT_BILL_TEMPLATE
+                      const template = resolveBillTemplate(form.wa_bill_template)
                       let msg = ''
                       try {
                         // No-login link to this bill (only for bills saved online).

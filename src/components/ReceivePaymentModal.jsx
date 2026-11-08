@@ -9,7 +9,7 @@ import { supabase } from '../services/supabase'
 import { printHTML } from '../utils/printUtils'
 import { generateBillPDF, shareOrDownloadPDF } from '../utils/pdfShare'
 import { createBillLink, fillPortalLink } from '../services/portalApi'
-import { DEFAULT_PAYMENT_TEMPLATE, fillTemplate, billLines, billNo, fmtRs, waPhone, openWhatsApp } from '../utils/billMessages'
+import { resolvePaymentTemplate, fillTemplate, billLines, billNo, fmtRs, waPhone, openWhatsApp } from '../utils/billMessages'
 import { buildPaymentReceiptHTML } from '../utils/paymentReceipt'
 
 const MODES = [
@@ -150,7 +150,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
   })
 
   const buildMessage = async () => {
-    const template = shop?.wa_payment_template || DEFAULT_PAYMENT_TEMPLATE
+    const template = resolvePaymentTemplate(shop?.wa_payment_template)
     // Link to the most recent bill paid (it also shows the account balance).
     const linkBill = (result.bills || [])[result.bills.length - 1]
     const billLink = template.includes('[Bill Link]') && linkBill ? await createBillLink(linkBill.sale_id) : ''

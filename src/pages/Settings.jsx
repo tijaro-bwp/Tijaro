@@ -14,7 +14,7 @@ import { Store, Tag, Receipt, ShieldCheck, Printer, MessageCircle, Database, Bar
 import AppearanceSection from '../components/settings/AppearanceSection'
 import CustomerPortalSettings from '../components/CustomerPortalSettings'
 import { BRAND } from '../config/brand.js'
-import { DEFAULT_BILL_TEMPLATE, DEFAULT_PAYMENT_TEMPLATE } from '../utils/billMessages'
+import { DEFAULT_BILL_TEMPLATE, DEFAULT_PAYMENT_TEMPLATE, resolveBillTemplate } from '../utils/billMessages'
 
 // Sidebar sections. `form: true` sections share the single profile form and its Save button.
 const SETTINGS_SECTIONS = [
@@ -255,7 +255,7 @@ function Settings() {
         print_size:           data.print_size           || saved.print_size           || prev.print_size           || 'thermal',
         print_mode:           data.print_mode           || saved.print_mode           || prev.print_mode           || 'manual',
         wa_reminder_template: data.wa_reminder_template || saved.wa_reminder_template || prev.wa_reminder_template || '',
-        wa_bill_template:     data.wa_bill_template     || saved.wa_bill_template     || prev.wa_bill_template     || '',
+        wa_bill_template:     resolveBillTemplate(data.wa_bill_template || saved.wa_bill_template || prev.wa_bill_template),
         wa_reorder_template:  data.wa_reorder_template  || saved.wa_reorder_template  || prev.wa_reorder_template  || '',
         wa_payment_template:  data.wa_payment_template  || saved.wa_payment_template  || prev.wa_payment_template  || DEFAULT_PAYMENT_TEMPLATE,
         invoice_prefix:       data.invoice_prefix       || saved.invoice_prefix       || prev.invoice_prefix       || '',

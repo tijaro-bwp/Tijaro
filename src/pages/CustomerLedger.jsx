@@ -11,7 +11,7 @@ import { generateOutstandingPDF, generateBillPDF, shareOrDownloadPDF } from '../
 import CustomerPortalAccess from '../components/CustomerPortalAccess'
 import { fillPortalLink } from '../services/portalApi'
 import ReceivePaymentModal from '../components/ReceivePaymentModal'
-import { DEFAULT_BILL_TEMPLATE, DEFAULT_PAYMENT_TEMPLATE, fillTemplate, billLines, waPhone, openWhatsApp } from '../utils/billMessages'
+import { resolveBillTemplate, resolvePaymentTemplate, fillTemplate, billLines, waPhone, openWhatsApp } from '../utils/billMessages'
 
 // Local calendar day for date inputs (toISOString gives the UTC day, which is
 // yesterday between midnight and 5am in Pakistan).
@@ -367,8 +367,8 @@ function CustomerLedger() {
         const isPayment = entry.payAmt > 0
         const billRef = entry.billNumber || ''
         const template = isPayment
-            ? (shop?.wa_payment_template || DEFAULT_PAYMENT_TEMPLATE)
-            : (shop?.wa_bill_template || DEFAULT_BILL_TEMPLATE)
+            ? resolvePaymentTemplate(shop?.wa_payment_template)
+            : resolveBillTemplate(shop?.wa_bill_template)
         const msg = fillTemplate(fillPortalLink(template, shop), {
             name: customer.name || 'Customer',
             shopName: shop?.name || localStorage.getItem(`shop_name_${user.shop_id}`) || '',
