@@ -65,6 +65,31 @@ export function portalStaffCall(action, params = {}) {
   return post({ action, ...params }, token ? { 'x-session-token': token } : {})
 }
 
+/** No-login bill page call (/b/:token). */
+export function publicBillCall(token) {
+  return post({ action: 'public_bill', token })
+}
+
+/** No-login link to one bill, for WhatsApp messages. */
+export function billLinkUrl(token) {
+  return `${window.location.origin}/b/${token}`
+}
+
+/**
+ * Creates a fresh no-login link for a saved bill (staff only, online only).
+ * Resolves to the URL, or '' when it can't be made (offline, not migrated, …)
+ * so callers can simply leave the link out of the message.
+ */
+export async function createBillLink(saleId) {
+  if (!saleId || !/^\d+$/.test(String(saleId)) || !navigator.onLine) return ''
+  const { data, error } = await portalStaffCall('staff_bill_link', { sale_id: Number(saleId) })
+  if (error || !data?.token) {
+    if (error) console.warn('Bill link not created:', error.message)
+    return ''
+  }
+  return billLinkUrl(data.token)
+}
+
 /** Public portal address for a shop, e.g. https://app.example.com/c/al-madina-12 */
 export function portalUrl(slug) {
   return `${window.location.origin}/c/${slug}`

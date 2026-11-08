@@ -14,6 +14,7 @@ import { Store, Tag, Receipt, ShieldCheck, Printer, MessageCircle, Database, Bar
 import AppearanceSection from '../components/settings/AppearanceSection'
 import CustomerPortalSettings from '../components/CustomerPortalSettings'
 import { BRAND } from '../config/brand.js'
+import { DEFAULT_BILL_TEMPLATE, DEFAULT_PAYMENT_TEMPLATE } from '../utils/billMessages'
 
 // Sidebar sections. `form: true` sections share the single profile form and its Save button.
 const SETTINGS_SECTIONS = [
@@ -67,6 +68,7 @@ function Settings() {
       wa_reminder_template: 'Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!',
       wa_bill_template: 'Hello [Name], thank you for shopping at [Shop Name]! Your bill summary for Invoice #[ID] is Rs. [Amount]. Thank you for your business!',
       wa_reorder_template: 'Assalam-o-Alaikum *[Supplier Name]*! 🙏\n\n*[Shop Name]* se order:\n\n[Items]\n\nMeharbani farma kar jald supply karein. Shukriya!',
+      wa_payment_template: DEFAULT_PAYMENT_TEMPLATE,
       invoice_prefix: '',
       business_preset: 'general',
       pricing_mode: 'hidden',
@@ -255,6 +257,7 @@ function Settings() {
         wa_reminder_template: data.wa_reminder_template || saved.wa_reminder_template || prev.wa_reminder_template || '',
         wa_bill_template:     data.wa_bill_template     || saved.wa_bill_template     || prev.wa_bill_template     || '',
         wa_reorder_template:  data.wa_reorder_template  || saved.wa_reorder_template  || prev.wa_reorder_template  || '',
+        wa_payment_template:  data.wa_payment_template  || saved.wa_payment_template  || prev.wa_payment_template  || DEFAULT_PAYMENT_TEMPLATE,
         invoice_prefix:       data.invoice_prefix       || saved.invoice_prefix       || prev.invoice_prefix       || '',
         business_preset:      data.business_preset      || saved.business_preset      || prev.business_preset      || 'general',
         pricing_mode:         data.pricing_mode         || saved.pricing_mode         || prev.pricing_mode         || 'hidden',
@@ -348,6 +351,8 @@ function Settings() {
       wa_reminder_template: form.wa_reminder_template,
       wa_bill_template: form.wa_bill_template,
       wa_reorder_template: form.wa_reorder_template,
+      // wa_payment_template is saved online only (via the RPC below): an offline
+      // queued UPDATE with a column an older database lacks would be dropped.
       invoice_prefix: form.invoice_prefix,
     }
 
@@ -376,9 +381,14 @@ function Settings() {
         p_custom_price_label: form.custom_price_label || null,
         p_wholesale_enabled: !!form.wholesale_enabled,
       }
-      let { data: rpcResult, error } = await supabase.rpc('update_shop_settings', { ...baseParams, ...pricingParams })
-      // Backward compatibility: database not yet migrated (sql/wholesale_mode_migration.sql).
-      // PostgREST returns PGRST202 when no function matches the named params.
+      let { data: rpcResult, error } = await supabase.rpc('update_shop_settings', { ...baseParams, ...pricingParams, p_wa_payment_template: form.wa_payment_template || null })
+      // Backward compatibility: PostgREST returns PGRST202 when no function matches
+      // the named params. Older databases: no payment template
+      // (sql/bill_payments_migration.sql), then no pricing (sql/wholesale_mode_migration.sql).
+      if (error && error.code === 'PGRST202') {
+        console.warn('update_shop_settings: payment template not supported yet — run sql/bill_payments_migration.sql')
+        ;({ data: rpcResult, error } = await supabase.rpc('update_shop_settings', { ...baseParams, ...pricingParams }))
+      }
       if (error && error.code === 'PGRST202') {
         console.warn('update_shop_settings: pricing params not supported yet — run sql/wholesale_mode_migration.sql')
         ;({ data: rpcResult, error } = await supabase.rpc('update_shop_settings', baseParams))
@@ -946,6 +956,9 @@ function Settings() {
               <h3 className="text-sm font-black text-primary-fg uppercase tracking-wider mb-3">WhatsApp Messaging Templates</h3>
               <p className="text-[10px] text-fg-subtle mb-4">
                 Customer templates: <code className="bg-surface-3 px-1 rounded">[Name]</code> <code className="bg-surface-3 px-1 rounded">[Amount]</code> <code className="bg-surface-3 px-1 rounded">[Shop Name]</code> <code className="bg-surface-3 px-1 rounded">[ID]</code> <code className="bg-surface-3 px-1 rounded">[Portal Link]</code>
+                &nbsp;·&nbsp; Bill &amp; payment templates also: <code className="bg-surface-3 px-1 rounded">[Bill Total]</code> <code className="bg-surface-3 px-1 rounded">[Paid Now]</code> <code className="bg-surface-3 px-1 rounded">[Bill Balance]</code> <code className="bg-surface-3 px-1 rounded">[Previous Balance]</code> <code className="bg-surface-3 px-1 rounded">[New Balance]</code> <code className="bg-surface-3 px-1 rounded">[Bill Link]</code> (no-login link to the bill)
+                &nbsp;·&nbsp; Payment template only: <code className="bg-surface-3 px-1 rounded">[Bills]</code> (one line per bill paid)
+                &nbsp;·&nbsp; A line whose value is missing (e.g. no link offline) is left out.
                 &nbsp;·&nbsp; Reorder template: <code className="bg-surface-3 px-1 rounded">[Supplier Name]</code> <code className="bg-surface-3 px-1 rounded">[Shop Name]</code> <code className="bg-surface-3 px-1 rounded">[Items]</code>
               </p>
             </div>
@@ -959,13 +972,34 @@ function Settings() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="block text-sm font-bold text-fg-3 mb-1">🧾 New Bill / Sale Template</label>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label htmlFor="wa-bill-template" className="block text-sm font-bold text-fg-3">🧾 New Bill / Sale Template</label>
+                <button type="button" onClick={() => setForm({ ...form, wa_bill_template: DEFAULT_BILL_TEMPLATE })} className="text-xs font-semibold text-primary-fg hover:underline">
+                  Use recommended (with balances)
+                </button>
+              </div>
               <textarea
+                id="wa-bill-template"
                 value={form.wa_bill_template}
                 onChange={e => setForm({ ...form, wa_bill_template: e.target.value })}
-                className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm h-20"
+                className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm h-28"
                 placeholder="Hello [Name], thank you for shopping! Bill #[ID] for Rs. [Amount]..."
               />
+            </div>
+            <div className="md:col-span-2">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <label htmlFor="wa-payment-template" className="block text-sm font-bold text-fg-3">💵 Payment Received Template</label>
+                <button type="button" onClick={() => setForm({ ...form, wa_payment_template: DEFAULT_PAYMENT_TEMPLATE })} className="text-xs font-semibold text-primary-fg hover:underline">
+                  Use recommended
+                </button>
+              </div>
+              <textarea
+                id="wa-payment-template"
+                value={form.wa_payment_template}
+                onChange={e => setForm({ ...form, wa_payment_template: e.target.value })}
+                className="w-full px-4 py-2 border rounded-xl focus:ring-2 focus:ring-primary outline-none text-sm h-40"
+              />
+              <p className="text-[10px] text-fg-subtle mt-1">Sent from Customer Ledger → Receive Payment, after a payment is recorded against bills.</p>
             </div>
             <div className="md:col-span-2">
               <label className="block text-sm font-bold text-fg-3 mb-1">📦 Low Stock Reorder Template (Inventory → Reorder WA)</label>

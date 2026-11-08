@@ -406,7 +406,32 @@ const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 const isQuotation = (s: SaleRow) => s.sale_type === 'quotation' || s.payment_type === 'quotation'
 const billNo = (id: number) => String(id).slice(-8)
 const saleNet = (s: SaleRow) => num(s.total_amount) - num(s.discount)
+// Unpaid part at the time of sale. Ledger math uses this (later payments are
+// separate ledger credits); what a bill still owes is saleDue - collected.
 const saleDue = (s: SaleRow) => Math.max(0, saleNet(s) - num(s.paid_amount))
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+interface BillPayment { id: number; sale_id: number; date: string; amount: number; payment_mode: string | null }
+
+// Payments recorded later against these bills (sql/bill_payments_migration.sql).
+// An un-migrated database has no sale_id column: treat as "none".
+async function paymentsForBills(shopId: number, saleIds: number[]): Promise<BillPayment[]> {
+  if (saleIds.length === 0) return []
+  const { data, error } = await db.from('customer_payments')
+    .select('id, sale_id, created_at, amount, payment_mode')
+    .eq('shop_id', shopId).eq('payment_type', 'payment').in('sale_id', saleIds)
+    .order('created_at', { ascending: true }).order('id', { ascending: true })
+  if (error) return []
+  return (data ?? []).map((p) => ({
+    id: p.id, sale_id: p.sale_id, date: p.created_at, amount: Math.abs(num(p.amount)), payment_mode: p.payment_mode,
+  }))
+}
+
+function collectedBySale(payments: BillPayment[]): Map<number, number> {
+  const m = new Map<number, number>()
+  for (const p of payments) m.set(p.sale_id, (m.get(p.sale_id) ?? 0) + p.amount)
+  return m
+}
 
 async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>): Promise<T[]> {
   const out: T[] = []
@@ -544,16 +569,46 @@ async function bills(ctx: CustomerCtx, body: Record<string, unknown>) {
     .range(start, start + pageSize - 1)
   if (error) throw new HttpError(500, 'Could not load bills')
 
+  const rows = (data ?? []) as SaleRow[]
+  const collected = collectedBySale(await paymentsForBills(ctx.shop.id, rows.map((s) => s.id)))
   return {
     data: {
       page, page_size: pageSize, total: count ?? 0,
-      bills: (data ?? []).map((s: SaleRow) => ({
-        id: s.id, bill_no: billNo(s.id), date: s.created_at,
-        subtotal: num(s.total_amount), discount: num(s.discount), total: saleNet(s),
-        paid: num(s.paid_amount), due: saleDue(s), payment_mode: s.payment_type,
-      })),
+      bills: rows.map((s) => {
+        const later = collected.get(s.id) ?? 0
+        return {
+          id: s.id, bill_no: billNo(s.id), date: s.created_at,
+          subtotal: num(s.total_amount), discount: num(s.discount), total: saleNet(s),
+          paid: round2(num(s.paid_amount) + later), due: round2(Math.max(0, saleDue(s) - later)),
+          payment_mode: s.payment_type,
+        }
+      }),
     },
     error: null,
+  }
+}
+
+// Bill detail shared by the logged-in portal and no-login bill links.
+async function billDetail(shopId: number, sale: SaleRow) {
+  const [{ data: items, error }, payments] = await Promise.all([
+    db.from('sale_items')
+      .select('product_name, quantity, unit_price, line_total, returned_qty')
+      .eq('sale_id', sale.id).order('id', { ascending: true }),
+    paymentsForBills(shopId, [sale.id]),
+  ])
+  if (error) throw new HttpError(500, 'Could not load bill')
+  const later = payments.reduce((a, p) => a + p.amount, 0)
+  return {
+    id: sale.id, bill_no: billNo(sale.id), date: sale.created_at, payment_mode: sale.payment_type,
+    subtotal: num(sale.total_amount), discount: num(sale.discount), total: saleNet(sale),
+    paid_at_sale: num(sale.paid_amount),
+    paid: round2(num(sale.paid_amount) + later),
+    due: round2(Math.max(0, saleDue(sale) - later)),
+    payments: payments.map((p) => ({ id: p.id, date: p.date, amount: p.amount, payment_mode: p.payment_mode })),
+    items: (items ?? []).map((i) => ({
+      name: i.product_name, quantity: num(i.quantity), unit_price: num(i.unit_price),
+      line_total: num(i.line_total), returned_qty: num(i.returned_qty),
+    })),
   }
 }
 
@@ -563,25 +618,70 @@ async function bill(ctx: CustomerCtx, body: Record<string, unknown>) {
     .eq('id', id).eq('shop_id', ctx.shop.id).eq('customer_id', ctx.customerId).maybeSingle()
   if (!s || isQuotation(s as SaleRow)) throw new HttpError(404, 'Bill not found')
 
-  const { data: items, error } = await db.from('sale_items')
-    .select('product_name, quantity, unit_price, line_total, returned_qty')
-    .eq('sale_id', id).order('id', { ascending: true })
-  if (error) throw new HttpError(500, 'Could not load bill')
+  return { data: { shop: publicShop(ctx.shop), ...(await billDetail(ctx.shop.id, s as SaleRow)) }, error: null }
+}
 
-  const sale = s as SaleRow
+// ── No-login bill links (/b/<token>) ─────────────────────────────────────────
+// A random 256-bit token in the URL; only its SHA-256 is stored (bill_links).
+// The link shows one bill, the payments against it and the account balance.
+
+const BILL_LINK_DAYS = 90
+const BILL_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/
+const firstName = (name: unknown) => String(name ?? '').trim().split(/\s+/)[0] || 'Customer'
+
+async function publicBill(body: Record<string, unknown>) {
+  const token = typeof body.token === 'string' ? body.token : ''
+  const notFound = () => new HttpError(404, 'This bill link is not valid or has expired.', 'link_invalid')
+  if (!BILL_TOKEN_RE.test(token)) throw notFound()
+
+  const { data: link } = await db.from('bill_links')
+    .select('token_hash, shop_id, sale_id, customer_id, expires_at, revoked_at, open_count')
+    .eq('token_hash', await sha256Hex(token)).maybeSingle()
+  if (!link || link.revoked_at || new Date(link.expires_at) <= new Date()) throw notFound()
+
+  const [{ data: shop }, { data: s }, { data: cust }] = await Promise.all([
+    db.from('shops').select(SHOP_COLS).eq('id', link.shop_id).maybeSingle(),
+    db.from('sales').select(SALE_COLS).eq('id', link.sale_id).eq('shop_id', link.shop_id)
+      .eq('customer_id', link.customer_id).maybeSingle(),
+    db.from('customers').select('name, outstanding_balance').eq('id', link.customer_id)
+      .eq('shop_id', link.shop_id).maybeSingle(),
+  ])
+  if (!shop || (shop.status ?? 'active') === 'suspended' || !s || !cust || isQuotation(s as SaleRow)) throw notFound()
+
+  await db.from('bill_links')
+    .update({ last_opened_at: new Date().toISOString(), open_count: num(link.open_count) + 1 })
+    .eq('token_hash', link.token_hash)
+
+  const sh = shop as ShopRow
   return {
     data: {
-      shop: publicShop(ctx.shop),
-      id: sale.id, bill_no: billNo(sale.id), date: sale.created_at, payment_mode: sale.payment_type,
-      subtotal: num(sale.total_amount), discount: num(sale.discount), total: saleNet(sale),
-      paid: num(sale.paid_amount), due: saleDue(sale),
-      items: (items ?? []).map((i) => ({
-        name: i.product_name, quantity: num(i.quantity), unit_price: num(i.unit_price),
-        line_total: num(i.line_total), returned_qty: num(i.returned_qty),
-      })),
+      shop: { ...publicShop(sh), portal_enabled: shopIsOpen(sh) },
+      customer: { first_name: firstName(cust.name) },
+      balance: round2(num(cust.outstanding_balance)),
+      balance_as_of: new Date().toISOString(),
+      bill: await billDetail(sh.id, s as SaleRow),
     },
     error: null,
   }
+}
+
+async function staffBillLink(req: Request, staff: StaffCtx, body: Record<string, unknown>) {
+  const saleId = posInt(body.sale_id, 'sale_id')
+  const { data: s } = await db.from('sales').select('id, customer_id, sale_type, payment_type')
+    .eq('id', saleId).eq('shop_id', staff.shopId).maybeSingle()
+  if (!s) throw new HttpError(404, 'Bill not found')
+  if (!s.customer_id) throw bad('Only bills of a saved customer can be shared')
+  if (s.sale_type === 'quotation' || s.payment_type === 'quotation') throw bad('Quotations cannot be shared as bills')
+
+  const token = b64url(crypto.getRandomValues(new Uint8Array(32)))
+  const expires = new Date(Date.now() + BILL_LINK_DAYS * 86_400_000).toISOString()
+  const { error } = await db.from('bill_links').insert({
+    token_hash: await sha256Hex(token), shop_id: staff.shopId, sale_id: saleId,
+    customer_id: s.customer_id, created_by: staff.userId, expires_at: expires,
+  })
+  if (error) throw new HttpError(503, 'Bill links are not set up yet (run sql/bill_payments_migration.sql)', 'not_migrated')
+  await audit(req, staff.shopId, { id: staff.userId, label: staff.username }, 'BILL_LINK_CREATED', s.customer_id, { sale_id: saleId })
+  return { data: { token, expires_at: expires }, error: null }
 }
 
 async function statement(ctx: CustomerCtx, body: Record<string, unknown>) {
@@ -813,6 +913,7 @@ Deno.serve(async (req) => {
       // Public
       case 'shop_info': return json(200, await shopInfo(body))
       case 'login': return json(200, await login(req, body))
+      case 'public_bill': return json(200, await publicBill(body))
 
       // Customer (x-portal-token)
       case 'summary': return json(200, await summary(await requireCustomer(req)))
@@ -830,6 +931,7 @@ Deno.serve(async (req) => {
         return json(result.error ? 409 : 200, result)
       }
       case 'staff_disable': { const staff = await requireStaff(req); return json(200, await staffDisable(req, staff, body)) }
+      case 'staff_bill_link': { const staff = await requireStaff(req); return json(200, await staffBillLink(req, staff, body)) }
       case 'staff_shop_portal': return json(200, await staffShopPortal(await requireStaff(req)))
       case 'staff_set_shop_portal': { const staff = await requireStaff(req); return json(200, await staffSetShopPortal(req, staff, body)) }
 

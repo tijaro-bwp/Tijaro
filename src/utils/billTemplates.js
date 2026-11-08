@@ -626,13 +626,33 @@ function template4(r, isQuotation, s, isPurchase = false) {
   </div>${printScript}</body></html>`
 }
 
+// Customer account block (previous balance + this bill - paid = new balance),
+// added under any template when the receipt carries `r.account`.
+function accountBlock(a) {
+  const rs = (v) => `Rs. ${Math.abs(safeNum(v)).toLocaleString('en-PK', { maximumFractionDigits: 2 })}`
+  const row = (l, v, extra = '') => `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;${extra}"><span>${l}</span><span>${v}</span></div>`
+  const nb = safeNum(a.newBalance)
+  return `<div style="max-width:320px;margin:12px auto 4px;border:1px dashed #555;border-radius:6px;padding:8px 10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;background:#fff">
+    <div style="text-align:center;font-weight:bold;letter-spacing:.5px;margin-bottom:4px">ACCOUNT SUMMARY</div>
+    ${row('Previous balance', `${safeNum(a.previous) < 0 ? '-' : ''}${rs(a.previous)}`)}
+    ${row('This bill', `+ ${rs(a.bill)}`)}
+    ${row('Paid', `- ${rs(a.paid)}`)}
+    ${row(nb < 0 ? 'Advance with shop' : 'New balance', rs(nb), 'font-weight:bold;font-size:13px;border-top:1px solid #999;margin-top:3px;padding-top:4px')}
+  </div>`
+}
+
 // ── PUBLIC API ───────────────────────────────────────────────
 export function buildBillHTML(r, isQuotation = false, shopSettings = {}, isPurchase = false) {
   const template = shopSettings.print_template || localStorage.getItem(`print_template_${shopSettings.shop_id || ''}`) || localStorage.getItem('print_template') || '2'
-  if (template === '1') return template1(r, isQuotation, shopSettings, isPurchase)
-  if (template === '3') return template3(r, isQuotation, shopSettings, isPurchase)
-  if (template === '4') return template4(r, isQuotation, shopSettings, isPurchase)
-  return template2(r, isQuotation, shopSettings, isPurchase)
+  let html
+  if (template === '1') html = template1(r, isQuotation, shopSettings, isPurchase)
+  else if (template === '3') html = template3(r, isQuotation, shopSettings, isPurchase)
+  else if (template === '4') html = template4(r, isQuotation, shopSettings, isPurchase)
+  else html = template2(r, isQuotation, shopSettings, isPurchase)
+  if (r?.account && !isQuotation && !isPurchase && html.includes(printScript)) {
+    html = html.replace(printScript, accountBlock(r.account) + printScript)
+  }
+  return html
 }
 
 // ── SALES REPORT (daily / weekly / monthly) ──────────────────

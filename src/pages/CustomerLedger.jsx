@@ -10,6 +10,7 @@ import { adjustCustomerBalance, applySaleEffects, must } from '../services/integ
 import { generateOutstandingPDF, shareOrDownloadPDF } from '../utils/pdfShare'
 import CustomerPortalAccess from '../components/CustomerPortalAccess'
 import { fillPortalLink } from '../services/portalApi'
+import ReceivePaymentModal from '../components/ReceivePaymentModal'
 
 // Quotations are price quotes, not debts: they never affect the balance.
 const isQuotation = (s) => s?.sale_type === 'quotation' || s?.payment_type === 'quotation'
@@ -37,14 +38,16 @@ function CustomerLedger() {
     const [saving, setSaving] = useState(false)
     const [expandedSale, setExpandedSale] = useState(null)
     const [lastPayment, setLastPayment] = useState(null) // for print voucher after recording
+    const [showReceive, setShowReceive] = useState(false)
     const [selectedIds, setSelectedIds] = useState(new Set())
 
     useEffect(() => {
         if (id && user?.shop_id) fetchCustomerData()
     }, [id, user?.shop_id])
 
-    const fetchCustomerData = async () => {
-        setLoading(true)
+    // quiet: refresh without the full-page "Loading" state (keeps open dialogs mounted)
+    const fetchCustomerData = async ({ quiet = false } = {}) => {
+        if (!quiet) setLoading(true)
         try {
             if (!navigator.onLine) throw new Error('Offline')
 
@@ -196,7 +199,9 @@ function CustomerLedger() {
         }
     }
 
-    const printPaymentVoucher = (amount, note, date) => {
+    // balanceAfter: the customer's balance right after this payment (from the
+    // ledger row, or the updated balance just after saving).
+    const printPaymentVoucher = (amount, note, date, balanceAfter) => {
         const branding = getShopBranding(user?.shop_id)
         printHTML(`<html><head><title>Payment Receipt</title>
         <style>
@@ -220,9 +225,9 @@ function CustomerLedger() {
         <div class="row bold" style="font-size:16px;"><span>Amount Received</span><span>Rs. ${Number(amount).toLocaleString()}</span></div>
         ${note ? `<div class="row"><span>Note:</span><span>${note}</span></div>` : ''}
         <hr/>
-        <div class="row"><span>Remaining Balance:</span><span class="bold">Rs. ${Math.max(0, (customer.outstanding_balance || 0) - Number(amount)).toLocaleString()}</span></div>
+        <div class="row"><span>Remaining Balance:</span><span class="bold">Rs. ${Number(balanceAfter ?? customer.outstanding_balance ?? 0).toLocaleString()}</span></div>
         <hr/>
-        <p class="c" style="font-size:11px;color:#888;">Thank you! Payment received in full.</p>
+        <p class="c" style="font-size:11px;color:#888;">Thank you!</p>
         </body></html>`)
     }
 
@@ -361,7 +366,7 @@ function CustomerLedger() {
             const r = await adjustCustomerBalance(id, delta)
             if (r.ok) setCustomer(c => c ? { ...c, outstanding_balance: (Number(c.outstanding_balance) || 0) + delta } : c)
             else alert('Entry saved, but customer balance update failed: ' + (r.error?.message || 'unknown error'))
-            if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: now })
+            if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: now, balanceAfter: (Number(customer?.outstanding_balance) || 0) + delta })
             resetTxForm()
             fetchCustomerData()
         } catch (error) {
@@ -376,7 +381,7 @@ function CustomerLedger() {
                 const delta = saleAmt - payAmt
                 await adjustCustomerBalance(id, delta) // queued as an atomic change
                 setCustomer(c => c ? { ...c, outstanding_balance: (Number(c.outstanding_balance) || 0) + delta } : c)
-                if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: ts })
+                if (payAmt > 0) setLastPayment({ amount: payAmt, note: txForm.note.trim() || 'Cash Received', date: ts, balanceAfter: (Number(customer?.outstanding_balance) || 0) + delta })
                 resetTxForm()
                 fetchCustomerData()
                 alert('Offline mode: Transaction locally save ho gaya. Online hone par sync hoga! 🔄')
@@ -548,7 +553,7 @@ function CustomerLedger() {
                                             .replace(/\[Shop Name\]/g, shop?.name || 'our shop')
 
                                         const shopInfo = { name: shop?.name || 'Shop', phone: shop?.phone || '', address: shop?.address || '' }
-                                        const pdfBlob = generateOutstandingPDF(customer, ledger, shopInfo)
+                                        const pdfBlob = await generateOutstandingPDF(customer, ledger, shopInfo)
                                         await shareOrDownloadPDF(pdfBlob, `outstanding-${customer.name.replace(/\s+/g, '-')}.pdf`, formattedPhone, msg)
                                     } catch (err) {
                                         console.error('Outstanding PDF failed:', err)
@@ -582,10 +587,25 @@ function CustomerLedger() {
                         </button>
                         <button
                             onClick={() => setShowTxModal(true)}
-                            className="w-full sm:w-auto px-6 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition font-semibold shadow-lg">
+                            className="w-full sm:w-auto px-6 py-2.5 bg-surface border border-line-strong text-fg-2 hover:bg-surface-3 rounded-lg transition font-semibold">
                             ➕ Add Transaction
                         </button>
+                        <button
+                            onClick={() => setShowReceive(true)}
+                            className="w-full sm:w-auto px-6 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg transition font-semibold shadow-lg">
+                            💵 Receive Payment
+                        </button>
                     </div>
+                    {showReceive && (
+                        <ReceivePaymentModal
+                            customer={customer}
+                            onClose={() => setShowReceive(false)}
+                            onSaved={(r) => {
+                                setCustomer(c => c ? { ...c, outstanding_balance: Number(r?.new_balance ?? c.outstanding_balance) } : c)
+                                fetchCustomerData({ quiet: true })
+                            }}
+                        />
+                    )}
                 </div>
             </div>
 
@@ -630,7 +650,7 @@ function CustomerLedger() {
                                             )}
                                             {item.type === 'payment' && (
                                                 <button
-                                                    onClick={() => printPaymentVoucher(item.amount, item.note, item.date)}
+                                                    onClick={() => printPaymentVoucher(item.amount, item.note, item.date, item.balance)}
                                                     className="text-[10px] text-primary-fg hover:underline font-bold uppercase tracking-tighter"
                                                 >🖨️ Print</button>
                                             )}
@@ -755,7 +775,7 @@ function CustomerLedger() {
                                                 )}
                                                 {item.type === 'payment' && (
                                                     <button
-                                                        onClick={() => printPaymentVoucher(item.amount, item.note, item.date)}
+                                                        onClick={() => printPaymentVoucher(item.amount, item.note, item.date, item.balance)}
                                                         className="text-[10px] text-fg-subtle hover:text-success-fg font-medium transition"
                                                         title="Print Payment Voucher"
                                                     >🖨️ Print</button>
@@ -821,7 +841,7 @@ function CustomerLedger() {
                         <p className="text-xs opacity-90">Rs. {Number(lastPayment.amount).toLocaleString()} — {lastPayment.note}</p>
                     </div>
                     <button
-                        onClick={() => printPaymentVoucher(lastPayment.amount, lastPayment.note, lastPayment.date)}
+                        onClick={() => printPaymentVoucher(lastPayment.amount, lastPayment.note, lastPayment.date, lastPayment.balanceAfter)}
                         className="bg-surface text-success-strong font-bold text-xs px-3 py-2 rounded-xl hover:bg-success-soft transition whitespace-nowrap"
                     >
                         🖨️ Print

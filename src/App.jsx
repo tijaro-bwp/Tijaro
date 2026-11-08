@@ -46,11 +46,13 @@ const ResetPassword = lazy(() => import('./pages/admin/ResetPassword'))
 
 // Customer portal (public, mobile number + PIN; see docs/CUSTOMER_PORTAL.md)
 const CustomerPortal = lazy(() => import('./pages/portal/CustomerPortal'))
+// No-login link to one bill, sent on WhatsApp (see docs/BILL_PAYMENTS.md)
+const PublicBill = lazy(() => import('./pages/portal/PublicBill'))
 
 // The install prompt is for shop staff, not for customers using the portal.
 function StaffInstallPrompt() {
   const { pathname } = useLocation()
-  return pathname.startsWith('/c/') ? null : <PWAInstallPrompt />
+  return pathname.startsWith('/c/') || pathname.startsWith('/b/') ? null : <PWAInstallPrompt />
 }
 
 function PageFallback() {
@@ -72,6 +74,7 @@ function App() {
             <Route path="/" element={<Login />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/c/:slug/*" element={<CustomerPortal />} />
+            <Route path="/b/:token" element={<PublicBill />} />
 
             {/* ── Superadmin Platform Portal (Role: superadmin only) ── */}
             <Route

@@ -12,7 +12,8 @@ import { generateBillPDF, shareOrDownloadPDF } from '../utils/pdfShare'
 import { printHTML } from '../utils/printUtils'
 import { getPricingConfig, getShopSettings, isWholesaleEnabled, getUnitPrice, normalizeTier } from '../utils/businessPresets'
 import { BRAND } from '../config/brand.js'
-import { fillPortalLink } from '../services/portalApi'
+import { fillPortalLink, createBillLink } from '../services/portalApi'
+import { DEFAULT_BILL_TEMPLATE, fillTemplate, waPhone, openWhatsApp } from '../utils/billMessages'
 const PAKISTANI_PAYMENT_PROVIDERS = [
   { id: 'jazzcash', name: 'JazzCash', icon: '📱' },
   { id: 'easypaisa', name: 'Easypaisa', icon: '🟢' },
@@ -889,6 +890,11 @@ function POS() {
       ? 'quotation'
       : (finalPayments.length > 1 ? 'split' : singleMethod)
 
+    // Customer balance just before this bill (for "previous -> new balance" on
+    // the invoice and WhatsApp message). Read before any balance update below.
+    const selectedCustomer = customerId ? customers.find(c => String(c.id) === String(customerId)) : null
+    const prevBalance = selectedCustomer ? Math.round((Number(selectedCustomer.outstanding_balance) || 0) * 100) / 100 : null
+
     // Generate Sale Object
     const saleData = {
       shop_id: user.shop_id,
@@ -905,7 +911,8 @@ function POS() {
       status: 'completed',
       created_by: user.username,
       created_at: new Date().toISOString(),
-      ...(wholesaleEnabled ? { price_tier: activeTier } : {})
+      ...(wholesaleEnabled ? { price_tier: activeTier } : {}),
+      ...(saleType === 'sale' && prevBalance !== null ? { prev_balance: prevBalance } : {})
     }
 
     // Include payment_details for split or online/ref metadata
@@ -938,6 +945,7 @@ function POS() {
         delete fallbackSaleData.transaction_ref
         delete fallbackSaleData.price_tier
         delete fallbackSaleData.client_ref
+        delete fallbackSaleData.prev_balance
         ;({ data: sale, error: saleError } = await supabase.from('sales').insert([fallbackSaleData]).select().single())
       }
 
@@ -1035,7 +1043,14 @@ function POS() {
       receivedAmount: tendered,
       changeDue: changeDueVal,
       totalProfit,
-      isQuotation: saleType === 'quotation'
+      isQuotation: saleType === 'quotation',
+      // Account summary on the invoice: previous + this bill - paid = new balance
+      account: (saleType === 'sale' && prevBalance !== null) ? {
+        previous: prevBalance,
+        bill: total,
+        paid: Math.min(total, totalPaid),
+        newBalance: Math.round((prevBalance + balanceIncrease) * 100) / 100,
+      } : null
     })
 
     // Auto print for quotation
@@ -2782,18 +2797,26 @@ function POS() {
                       const btn = e.currentTarget
                       btn.disabled = true
                       btn.textContent = '⏳ Generating PDF...'
+                      const formattedPhone = waPhone(lastReceipt.customer.phone)
+                      const acc = lastReceipt.account
+                      const paidNow = acc ? acc.paid : Math.min(lastReceipt.total, Number(lastReceipt.sale?.paid_amount) || 0)
+                      const template = form.wa_bill_template || DEFAULT_BILL_TEMPLATE
+                      let msg = ''
                       try {
-                        const phone = lastReceipt.customer.phone.replace(/[^0-9]/g, '')
-                        let formattedPhone = phone
-                        if (phone.startsWith('03')) formattedPhone = '92' + phone.substring(1)
-                        else if (phone.length === 10) formattedPhone = '92' + phone
-
-                        const template = form.wa_bill_template || 'Hello [Name], thank you for shopping at [Shop Name]! Your bill summary for Invoice #[ID] is Rs. [Amount]. Thank you for your business!'
-                        const msg = fillPortalLink(template, { portal_slug: form.portal_slug, portal_enabled: form.portal_enabled })
-                          .replace(/\[Name\]/g, lastReceipt.customer.name || 'Customer')
-                          .replace(/\[Amount\]/g, lastReceipt.total.toFixed(0))
-                          .replace(/\[Shop Name\]/g, form.name || 'our shop')
-                          .replace(/\[ID\]/g, String(lastReceipt.sale.id).slice(-8))
+                        // No-login link to this bill (only for bills saved online).
+                        const billLink = template.includes('[Bill Link]') ? await createBillLink(lastReceipt.sale.id) : ''
+                        msg = fillTemplate(fillPortalLink(template, { portal_slug: form.portal_slug, portal_enabled: form.portal_enabled }), {
+                          name: lastReceipt.customer.name || 'Customer',
+                          shopName: form.name || 'our shop',
+                          id: String(lastReceipt.sale.id).slice(-8),
+                          amount: lastReceipt.total,
+                          billTotal: lastReceipt.total,
+                          paidNow,
+                          billBalance: Math.max(0, lastReceipt.total - paidNow),
+                          previousBalance: acc?.previous,
+                          newBalance: acc?.newBalance,
+                          billLink,
+                        })
 
                         const billHtml = buildReceiptHTML(lastReceipt, false)
                         const pdfBlob = await generateBillPDF(billHtml)
@@ -2802,12 +2825,7 @@ function POS() {
                       } catch (err) {
                         console.error('PDF share failed:', err)
                         alert('PDF nahi ban saka. WhatsApp text message bheja ja raha hai.')
-                        const phone = lastReceipt.customer.phone.replace(/[^0-9]/g, '')
-                        let formattedPhone = phone
-                        if (phone.startsWith('03')) formattedPhone = '92' + phone.substring(1)
-                        else if (phone.length === 10) formattedPhone = '92' + phone
-                        const msg = `${form.name || 'Shop'} - Bill Rs. ${lastReceipt.total.toFixed(0)}`
-                        window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+                        openWhatsApp(formattedPhone, msg || `${form.name || 'Shop'} - Bill Rs. ${lastReceipt.total.toFixed(0)}`)
                       } finally {
                         btn.disabled = false
                         btn.innerHTML = '<span>💬</span> WhatsApp'
