@@ -643,7 +643,9 @@ async function customerLogout(ctx: CustomerCtx) {
 interface StaffCtx {
   userId: string
   username: string
+  role: string
   shopId: number
+  impersonating: boolean
 }
 
 async function requireStaff(req: Request): Promise<StaffCtx> {
@@ -661,7 +663,7 @@ async function requireStaff(req: Request): Promise<StaffCtx> {
   if (!impersonating && (!STAFF_ROLES.has(user.role) || String(user.shop_id) !== String(sess.shop_id))) {
     throw new HttpError(403, 'Not allowed')
   }
-  return { userId: user.id, username: user.username ?? '', shopId: Number(sess.shop_id) }
+  return { userId: user.id, username: user.username ?? '', role: user.role, shopId: Number(sess.shop_id), impersonating }
 }
 
 async function staffCustomer(staff: StaffCtx, body: Record<string, unknown>) {
@@ -751,6 +753,36 @@ async function staffIssuePin(req: Request, staff: StaffCtx, body: Record<string,
   }
 }
 
+// Shop-wide switch and the shop's portal address (Settings → Customer Portal).
+async function staffShopPortal(staff: StaffCtx) {
+  const { data: shop } = await db.from('shops').select(SHOP_COLS).eq('id', staff.shopId).maybeSingle()
+  if (!shop) throw new HttpError(404, 'Shop not found')
+  const { count } = await db.from('customer_portal_accounts').select('customer_id', { count: 'exact', head: true })
+    .eq('shop_id', staff.shopId).eq('is_enabled', true)
+  return {
+    data: {
+      slug: (shop as ShopRow).portal_slug,
+      enabled: (shop as ShopRow).portal_enabled !== false,
+      suspended: (shop as ShopRow).status === 'suspended',
+      active_logins: count ?? 0,
+      can_manage: staff.role === 'admin' || staff.impersonating,
+    },
+    error: null,
+  }
+}
+
+async function staffSetShopPortal(req: Request, staff: StaffCtx, body: Record<string, unknown>) {
+  if (!(staff.role === 'admin' || staff.impersonating)) throw new HttpError(403, 'Only the shop admin can change this')
+  if (typeof body.enabled !== 'boolean') throw bad('enabled must be true or false')
+  const { error } = await db.from('shops').update({ portal_enabled: body.enabled }).eq('id', staff.shopId)
+  if (error) throw new HttpError(500, 'Could not save')
+  // Switching off ends every customer session for the shop.
+  if (!body.enabled) await db.from('customer_sessions').delete().eq('shop_id', staff.shopId)
+  await audit(req, staff.shopId, { id: staff.userId, label: staff.username },
+    body.enabled ? 'PORTAL_SHOP_ENABLED' : 'PORTAL_SHOP_DISABLED', null)
+  return staffShopPortal(staff)
+}
+
 async function staffDisable(req: Request, staff: StaffCtx, body: Record<string, unknown>) {
   const { cust } = await staffCustomer(staff, body)
   await db.from('customer_portal_accounts').update({ is_enabled: false, updated_at: new Date().toISOString() })
@@ -798,6 +830,8 @@ Deno.serve(async (req) => {
         return json(result.error ? 409 : 200, result)
       }
       case 'staff_disable': { const staff = await requireStaff(req); return json(200, await staffDisable(req, staff, body)) }
+      case 'staff_shop_portal': return json(200, await staffShopPortal(await requireStaff(req)))
+      case 'staff_set_shop_portal': { const staff = await requireStaff(req); return json(200, await staffSetShopPortal(req, staff, body)) }
 
       default: throw bad('Unknown action')
     }

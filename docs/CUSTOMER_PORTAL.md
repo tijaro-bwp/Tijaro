@@ -9,7 +9,7 @@ their bills, ledger statement and current balance. It is read-only.
 | Backend | `supabase/functions/portal-api/index.ts` (Edge Function) |
 | Browser client | `src/services/portalApi.js` |
 | Customer pages | Phase 3 — route `/c/:slug` (not built yet) |
-| Staff controls | Phase 2 — customer ledger page (not built yet) |
+| Staff controls | `src/components/CustomerPortalAccess.jsx` (customer ledger → **Portal Login**), `src/components/CustomerPortalSettings.jsx` (Settings → **Customer Portal**) |
 
 ## Setup
 
@@ -59,6 +59,8 @@ Responses are `{ data, error }`; errors carry `message`, `status` and sometimes 
 | `staff_status` | `x-session-token` | `customer_id` | enabled?, login number, last login, lock state, shop slug |
 | `staff_issue_pin` | `x-session-token` | `customer_id` | `pin` (shown once), login number, shop slug. 409 `duplicate_phone` lists clashing customers |
 | `staff_disable` | `x-session-token` | `customer_id` | turns the login off, signs out devices |
+| `staff_shop_portal` | `x-session-token` | — | shop slug, on/off, active login count, `can_manage` |
+| `staff_set_shop_portal` | `x-session-token` (admin) | `enabled` | shop-wide switch; off signs out every customer |
 
 Staff actions accept admin, manager and cashier sessions (and superadmin impersonation) of the
 customer's own shop.
@@ -83,19 +85,22 @@ customer's own shop.
 - **Caching.** The PWA service worker only caches `/rest/` Supabase calls; `/functions/v1/` is not
   cached, and responses send `Cache-Control: no-store`.
 
+## WhatsApp templates
+
+Shop templates (Settings → WhatsApp) accept `[Portal Link]`, filled with `https://<app>/c/<slug>`
+(empty when the portal is off). Used in bill messages (POS), debt reminders (customer ledger,
+Customers list) and bulk reminders. Never put PINs in templates.
+
 ## Balance
 
 The portal's balance is computed from transactions (bills minus amounts paid at sale, plus charges,
 minus payments and returns; cash refunds don't change it). This is the same logic as the shop's
-customer ledger page (`src/pages/CustomerLedger.jsx`) **except quotations are excluded**. The shop
-page currently counts an unpaid quotation as owed, so the two can differ for customers with
-quotations; `customers.outstanding_balance` can also drift (the ledger page's *Reconcile* fixes
-that). Aligning the shop ledger with the portal is a follow-up.
+customer ledger page (`src/pages/CustomerLedger.jsx`); both exclude quotations, which never change
+`customers.outstanding_balance` either. The stored balance can still drift from the transactions
+(the ledger page's *Reconcile* fixes that); the portal always shows the transaction-based figure.
 
 ## Not built yet
 
-- Phase 2 — staff UI: Give portal login / Reset PIN / Turn off, WhatsApp message with the PIN,
-  portal link in bill messages, shop on/off switch in Settings.
 - Phase 3 — customer pages at `/c/:slug`: login, home, bills, bill detail + PDF, statement + PDF,
   change PIN. Must stay outside `ProtectedRoute`/`Layout` and be `noindex`.
 - Plan gating (`customer_portal` feature flag).

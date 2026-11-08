@@ -5,6 +5,7 @@ import { db } from '../services/db'
 import { Link } from 'react-router-dom'
 import { hasFeature } from '../utils/featureGate'
 import UpgradeWall from '../components/UpgradeWall'
+import { fillPortalLink } from '../services/portalApi'
 
 function WhatsAppMessaging() {
   const { user } = useAuth()
@@ -62,7 +63,7 @@ function WhatsAppMessaging() {
 
     const template = shop?.wa_reminder_template || "Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!"
     
-    const message = template
+    const message = fillPortalLink(template, shop)
       .replace(/\[Name\]/g, customer.name)
       .replace(/\[Amount\]/g, customer.outstanding_balance.toLocaleString())
       .replace(/\[Shop Name\]/g, shop?.name || 'our shop')

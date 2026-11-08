@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx'
 import { printHTML, getShopBranding, brandedA4Header } from '../utils/printUtils'
 import { db, addToSyncQueue, moveToTrash } from '../services/db'
 import PasswordModal from '../components/PasswordModal'
+import { fillPortalLink } from '../services/portalApi'
 import { getShopSettings, isWholesaleEnabled, normalizeTier } from '../utils/businessPresets'
 
 function Customers() {
@@ -510,7 +511,7 @@ function Customers() {
                             else if (phone.length === 10) formattedPhone = '92' + phone
 
                             const template = shop?.wa_reminder_template || "Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!"
-                            const msg = template
+                            const msg = fillPortalLink(template, shop)
                               .replace(/\[Name\]/g, c.name)
                               .replace(/\[Amount\]/g, (c.outstanding_balance || 0).toLocaleString())
                               .replace(/\[Shop Name\]/g, shop?.name || 'our shop')

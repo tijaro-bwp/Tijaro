@@ -10,8 +10,9 @@ import { hasFeature } from '../utils/featureGate'
 import { printHTML } from '../utils/printUtils'
 import { syncOfflineData, getSyncQueueStatus, retryFailedSyncItems } from '../services/syncService'
 import { BUSINESS_PRESETS } from '../utils/businessPresets'
-import { Store, Tag, Receipt, ShieldCheck, Printer, MessageCircle, Database, BarChart3, CreditCard, AlertTriangle, Palette } from 'lucide-react'
+import { Store, Tag, Receipt, ShieldCheck, Printer, MessageCircle, Database, BarChart3, CreditCard, AlertTriangle, Palette, KeyRound } from 'lucide-react'
 import AppearanceSection from '../components/settings/AppearanceSection'
+import CustomerPortalSettings from '../components/CustomerPortalSettings'
 import { BRAND } from '../config/brand.js'
 
 // Sidebar sections. `form: true` sections share the single profile form and its Save button.
@@ -21,6 +22,7 @@ const SETTINGS_SECTIONS = [
   { id: 'pos',      label: 'POS & Receipts',    icon: Printer,       form: true, desc: 'POS screen layout, receipt footers, invoice prefix, print size and bill template.' },
   { id: 'appearance', label: 'Appearance',     icon: Palette,       desc: 'Light or dark mode and brand colour for this shop. Applies instantly on this device.' },
   { id: 'whatsapp', label: 'WhatsApp',          icon: MessageCircle, form: true, desc: 'Message templates for reminders, bills and supplier reorders.' },
+  { id: 'portal',   label: 'Customer Portal',   icon: KeyRound,      desc: 'Let customers see their bills and balance online with their mobile number and PIN.' },
   { id: 'data',     label: 'Data & Backup',     icon: Database,      desc: 'Sync, import, export or back up your store data.' },
   { id: 'reports',  label: 'Sales Reports',     icon: BarChart3,     desc: 'Print a daily, weekly or monthly sales summary.' },
   { id: 'plan',     label: 'Plan & Updates',    icon: CreditCard,    desc: 'Your subscription tier, limits and software version.' },
@@ -943,7 +945,7 @@ function Settings() {
             <div className="md:col-span-2">
               <h3 className="text-sm font-black text-primary-fg uppercase tracking-wider mb-3">WhatsApp Messaging Templates</h3>
               <p className="text-[10px] text-fg-subtle mb-4">
-                Customer templates: <code className="bg-surface-3 px-1 rounded">[Name]</code> <code className="bg-surface-3 px-1 rounded">[Amount]</code> <code className="bg-surface-3 px-1 rounded">[Shop Name]</code> <code className="bg-surface-3 px-1 rounded">[ID]</code>
+                Customer templates: <code className="bg-surface-3 px-1 rounded">[Name]</code> <code className="bg-surface-3 px-1 rounded">[Amount]</code> <code className="bg-surface-3 px-1 rounded">[Shop Name]</code> <code className="bg-surface-3 px-1 rounded">[ID]</code> <code className="bg-surface-3 px-1 rounded">[Portal Link]</code>
                 &nbsp;·&nbsp; Reorder template: <code className="bg-surface-3 px-1 rounded">[Supplier Name]</code> <code className="bg-surface-3 px-1 rounded">[Shop Name]</code> <code className="bg-surface-3 px-1 rounded">[Items]</code>
               </p>
             </div>
@@ -1035,6 +1037,13 @@ function Settings() {
             </ul>
           )}
         </div>
+      )}
+
+      {activeSection === 'portal' && (
+      <div className="bg-surface rounded-2xl shadow-sm border border-line-subtle p-6">
+        <h3 className="font-bold text-fg mb-3">Customer Portal</h3>
+        <CustomerPortalSettings />
+      </div>
       )}
 
       {activeSection === 'data' && (

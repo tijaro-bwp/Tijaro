@@ -12,6 +12,7 @@ import { generateBillPDF, shareOrDownloadPDF } from '../utils/pdfShare'
 import { printHTML } from '../utils/printUtils'
 import { getPricingConfig, getShopSettings, isWholesaleEnabled, getUnitPrice, normalizeTier } from '../utils/businessPresets'
 import { BRAND } from '../config/brand.js'
+import { fillPortalLink } from '../services/portalApi'
 const PAKISTANI_PAYMENT_PROVIDERS = [
   { id: 'jazzcash', name: 'JazzCash', icon: '📱' },
   { id: 'easypaisa', name: 'Easypaisa', icon: '🟢' },
@@ -404,7 +405,9 @@ function POS() {
             print_mode: s.data.print_mode || prev.print_mode,
             logo_url: localLogo || s.data.logo_url || prev.logo_url || '',
             wa_reminder_template: s.data.wa_reminder_template || prev.wa_reminder_template,
-            wa_bill_template: s.data.wa_bill_template || prev.wa_bill_template
+            wa_bill_template: s.data.wa_bill_template || prev.wa_bill_template,
+            portal_slug: s.data.portal_slug || prev.portal_slug || '',
+            portal_enabled: s.data.portal_enabled !== false
           }
         })
       }
@@ -482,7 +485,9 @@ function POS() {
               print_size: localShop.print_size || prev.print_size,
               print_mode: localShop.print_mode || prev.print_mode,
               wa_reminder_template: localShop.wa_reminder_template || prev.wa_reminder_template,
-              wa_bill_template: localShop.wa_bill_template || prev.wa_bill_template
+              wa_bill_template: localShop.wa_bill_template || prev.wa_bill_template,
+              portal_slug: localShop.portal_slug || prev.portal_slug || '',
+              portal_enabled: localShop.portal_enabled !== false
             }
           })
         }
@@ -2784,7 +2789,7 @@ function POS() {
                         else if (phone.length === 10) formattedPhone = '92' + phone
 
                         const template = form.wa_bill_template || 'Hello [Name], thank you for shopping at [Shop Name]! Your bill summary for Invoice #[ID] is Rs. [Amount]. Thank you for your business!'
-                        const msg = template
+                        const msg = fillPortalLink(template, { portal_slug: form.portal_slug, portal_enabled: form.portal_enabled })
                           .replace(/\[Name\]/g, lastReceipt.customer.name || 'Customer')
                           .replace(/\[Amount\]/g, lastReceipt.total.toFixed(0))
                           .replace(/\[Shop Name\]/g, form.name || 'our shop')

@@ -8,6 +8,11 @@ import { printHTML, getShopBranding } from '../utils/printUtils'
 import { db } from '../services/db'
 import { adjustCustomerBalance, applySaleEffects, must } from '../services/integrity'
 import { generateOutstandingPDF, shareOrDownloadPDF } from '../utils/pdfShare'
+import CustomerPortalAccess from '../components/CustomerPortalAccess'
+import { fillPortalLink } from '../services/portalApi'
+
+// Quotations are price quotes, not debts: they never affect the balance.
+const isQuotation = (s) => s?.sale_type === 'quotation' || s?.payment_type === 'quotation'
 
 function CustomerLedger() {
     const { id } = useParams()
@@ -60,7 +65,7 @@ function CustomerLedger() {
 
             // 4. Combine into Ledger
             const combined = [
-                ...(sales || []).map(s => ({
+                ...(sales || []).filter(s => !isQuotation(s)).map(s => ({
                     id: s.id,
                     date: s.created_at,
                     type: 'sale',
@@ -136,7 +141,7 @@ function CustomerLedger() {
                 const myPayments = lPayments.filter(p => String(p.customer_id) === String(id))
 
                 const combined = [
-                    ...mySales.map(s => ({
+                    ...mySales.filter(s => !isQuotation(s)).map(s => ({
                         id: s.id,
                         date: s.created_at,
                         type: 'sale',
@@ -537,7 +542,7 @@ function CustomerLedger() {
                                         else if (phone.length === 10) formattedPhone = '92' + phone
 
                                         const template = shop?.wa_reminder_template || "Hello [Name], this is a reminder from [Shop Name] regarding your outstanding balance of Rs. [Amount]. Please clear your dues at your earliest convenience. Thank you!"
-                                        const msg = template
+                                        const msg = fillPortalLink(template, shop)
                                             .replace(/\[Name\]/g, customer.name)
                                             .replace(/\[Amount\]/g, (customer.outstanding_balance || 0).toLocaleString())
                                             .replace(/\[Shop Name\]/g, shop?.name || 'our shop')
@@ -563,6 +568,11 @@ function CustomerLedger() {
                                 <span>💬</span> WhatsApp Reminder
                             </button>
                         )}
+                        <CustomerPortalAccess
+                            customer={customer}
+                            shopName={localStorage.getItem(`shop_name_${user.shop_id}`) || ''}
+                            className="w-full sm:w-auto"
+                        />
                         <button
                             onClick={handleReconcileBalance}
                             className="w-full sm:w-auto px-4 py-2.5 bg-warning hover:bg-warning-hover text-white rounded-lg transition font-semibold shadow-lg flex items-center justify-center gap-1.5"

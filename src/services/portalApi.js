@@ -41,7 +41,10 @@ async function post(body, extraHeaders = {}) {
   }
   let payload = null
   try { payload = await res.json() } catch { payload = null }
-  if (!payload) return { data: null, error: { message: `Server error (HTTP ${res.status})`, status: res.status } }
+  // Not our function's { data, error } shape: the function is missing (404) or the gateway failed.
+  if (!payload || !('error' in payload)) {
+    return { data: null, error: { message: `Portal service unavailable (HTTP ${res.status})`, status: res.status, code: 'service_unavailable' } }
+  }
   if (!res.ok && !payload.error) payload.error = { message: `Server error (HTTP ${res.status})`, status: res.status }
   return payload
 }
@@ -65,4 +68,36 @@ export function portalStaffCall(action, params = {}) {
 /** Public portal address for a shop, e.g. https://app.example.com/c/al-madina-12 */
 export function portalUrl(slug) {
   return `${window.location.origin}/c/${slug}`
+}
+
+/** 923012616367 -> 0301-2616367 (other numbers are returned unchanged). */
+export function formatLocalPhone(normalized) {
+  const d = String(normalized || '')
+  if (/^923\d{9}$/.test(d)) return `0${d.slice(2, 5)}-${d.slice(5)}`
+  return d
+}
+
+/** WhatsApp text that hands a customer their portal login. */
+export function portalLoginMessage({ customerName, shopName, slug, phone, pin }) {
+  return [
+    `Assalam o Alaikum ${customerName || ''},`.replace(' ,', ','),
+    '',
+    `You can now see your bills and balance from ${shopName || 'our shop'} online.`,
+    '',
+    `Link: ${portalUrl(slug)}`,
+    `Mobile: ${formatLocalPhone(phone)}`,
+    `PIN: ${pin}`,
+    '',
+    'Please keep your PIN private. You can change it after logging in.',
+  ].join('\n')
+}
+
+/**
+ * Replaces the [Portal Link] placeholder in a WhatsApp template.
+ * Empty when the shop has no portal address or has switched the portal off.
+ */
+export function fillPortalLink(text, shop) {
+  if (!text || !text.includes('[Portal Link]')) return text
+  const on = shop?.portal_slug && shop?.portal_enabled !== false
+  return text.replace(/\[Portal Link\]/g, on ? portalUrl(shop.portal_slug) : '').replace(/[ \t]+\n/g, '\n').trim()
 }
