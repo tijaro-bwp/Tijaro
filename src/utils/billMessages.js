@@ -36,6 +36,22 @@ export const DEFAULT_PAYMENT_TEMPLATE = [
   '[Shop Name]',
 ].join('\n')
 
+// Sent when a delivery bill leaves the shop with a loader (POS → Delivery).
+export const DEFAULT_DELIVERY_TEMPLATE = [
+  'Assalam o Alaikum [Name],',
+  '',
+  'Your order from [Shop Name] is on the way.',
+  'Delivered by: [Loader]',
+  'Bill #[ID]: Rs. [Bill Total]',
+  'Paid: Rs. [Paid Now]',
+  'To pay on delivery: Rs. [Bill Balance]',
+  '',
+  'Previous balance: Rs. [Previous Balance]',
+  'New balance: Rs. [New Balance]',
+  '',
+  'View your bill: [Bill Link]',
+].join('\n')
+
 // Built-in texts from before balances and links existed. Every shop got this
 // one as its stored default, so a stored copy means "never customised".
 const LEGACY_BILL_TEMPLATES = [
@@ -72,10 +88,20 @@ export function waPhone(phone) {
 
 export const billNo = (id) => String(id ?? '').slice(-8)
 
+/**
+ * The number printed on a bill: the shop's own sequence (INV-0042, set by the
+ * database: sql/pos_modes_migration.sql) or, for older / not-yet-synced bills,
+ * the last 8 digits of its id.
+ */
+export function saleBillNo(sale) {
+  if (sale?.invoice_number) return String(sale.invoice_number)
+  return billNo(sale?.id)
+}
+
 /** One line per bill for the [Bills] placeholder. */
 export function billLines(bills = []) {
   return bills.map((b) =>
-    `Bill #${billNo(b.sale_id)}: total Rs. ${fmtRs(b.net_total)}, paid now Rs. ${fmtRs(b.paid_now)}, ` +
+    `Bill #${b.bill_no || billNo(b.sale_id)}: total Rs. ${fmtRs(b.net_total)}, paid now Rs. ${fmtRs(b.paid_now)}, ` +
     (Number(b.due) > 0 ? `remaining Rs. ${fmtRs(b.due)}` : 'fully paid ✓')
   ).join('\n')
 }
@@ -93,6 +119,7 @@ const KEYS = {
   bills: '[Bills]',
   billLink: '[Bill Link]',
   portalLink: '[Portal Link]',
+  loader: '[Loader]',
 }
 const MONEY = new Set(['amount', 'billTotal', 'paidNow', 'billBalance', 'previousBalance', 'newBalance'])
 

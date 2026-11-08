@@ -117,7 +117,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
     e.preventDefault()
     setError('')
     if (!(amt > 0)) { setError('Enter the amount received.'); return }
-    if (overBill) { setError(`Bill #${billNo(overBill.sale_id)} only has Rs. ${fmtRs(overBill.due)} left to pay.`); return }
+    if (overBill) { setError(`Bill #${(overBill.bill_no || billNo(overBill.sale_id))} only has Rs. ${fmtRs(overBill.due)} left to pay.`); return }
     if (extra < -0.009) { setError(`The bills add up to Rs. ${fmtRs(allocated)}, more than the Rs. ${fmtRs(amt)} received.`); return }
     setSaving(true)
     const allocations = bills
@@ -158,7 +158,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
     return fillTemplate(fillPortalLink(template, shop), {
       name: customer.name || 'Customer',
       shopName: shop?.name || '',
-      id: one ? billNo(one.sale_id) : '',
+      id: one ? (one.bill_no || billNo(one.sale_id)) : '',
       amount: result.total_paid,
       paidNow: result.total_paid,
       billTotal: one?.net_total,
@@ -215,7 +215,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
               <ul className="divide-y divide-line-subtle rounded-xl border border-line">
                 {result.bills.map((b) => (
                   <li key={b.sale_id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-                    <span className="font-semibold text-fg">Bill #{billNo(b.sale_id)}</span>
+                    <span className="font-semibold text-fg">Bill #{b.bill_no || billNo(b.sale_id)}</span>
                     <span className="text-fg-muted">paid Rs. {fmtRs(b.paid_now)}</span>
                     {Number(b.due) > 0
                       ? <span className="badge badge-danger">Left Rs. {fmtRs(b.due)}</span>
@@ -283,7 +283,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
                           return (
                             <li key={b.sale_id} className="flex items-center gap-3 px-3 py-2.5">
                               <div className="min-w-0 flex-1">
-                                <p className="text-sm font-semibold text-fg">Bill #{billNo(b.sale_id)}</p>
+                                <p className="text-sm font-semibold text-fg">Bill #{b.bill_no || billNo(b.sale_id)}</p>
                                 <p className="text-xs text-fg-muted">
                                   {new Date(b.created_at).toLocaleDateString('en-PK')} · total Rs. {fmtRs(b.net_total)} ·{' '}
                                   <button type="button" onClick={() => payFull(b)} className="font-semibold text-danger-fg hover:underline">
@@ -291,7 +291,7 @@ export default function ReceivePaymentModal({ customer, onClose, onSaved }) {
                                   </button>
                                 </p>
                               </div>
-                              <label className="sr-only" htmlFor={`rp-b-${b.sale_id}`}>Amount for bill {billNo(b.sale_id)}</label>
+                              <label className="sr-only" htmlFor={`rp-b-${b.sale_id}`}>Amount for bill {b.bill_no || billNo(b.sale_id)}</label>
                               <input
                                 id={`rp-b-${b.sale_id}`} type="number" inputMode="decimal" min="0" step="any"
                                 value={v} onChange={(e) => onBillAmount(b.sale_id, e.target.value)}

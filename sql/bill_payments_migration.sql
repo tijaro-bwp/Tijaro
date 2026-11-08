@@ -35,14 +35,18 @@ ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS wa_payment_template text;
 -- Bills of one customer with what each still owes.
 -- SECURITY INVOKER: tenant RLS (is_valid_session) applies to every row read.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.customer_bills_due(p_customer_id integer, p_only_open boolean DEFAULT true)
+-- Same definitions as sql/pos_modes_migration.sql (bill_no = the shop's bill
+-- number, falling back to the id), so the two files can run in any order.
+DROP FUNCTION IF EXISTS public.customer_bills_due(integer, boolean);
+CREATE FUNCTION public.customer_bills_due(p_customer_id integer, p_only_open boolean DEFAULT true)
 RETURNS TABLE (
-  sale_id      integer,
-  created_at   timestamp without time zone,
-  net_total    numeric,
-  paid_at_sale numeric,
-  collected    numeric,
-  due          numeric
+  sale_id        integer,
+  created_at     timestamp without time zone,
+  net_total      numeric,
+  paid_at_sale   numeric,
+  collected      numeric,
+  due            numeric,
+  bill_no        text
 )
 LANGUAGE sql STABLE
 SET search_path TO 'public'
@@ -53,29 +57,20 @@ AS $$
            round(COALESCE(s.total_amount, 0) - COALESCE(s.discount, 0), 2) AS net_total,
            COALESCE(s.paid_amount, 0) AS paid_at_sale,
            COALESCE((SELECT sum(abs(cp.amount)) FROM customer_payments cp
-                      WHERE cp.sale_id = s.id AND cp.payment_type = 'payment'), 0) AS collected
+                      WHERE cp.sale_id = s.id AND cp.payment_type = 'payment'), 0) AS collected,
+           COALESCE(s.invoice_number, right(s.id::text, 8)) AS bill_no
       FROM sales s
      WHERE s.customer_id = p_customer_id
        AND COALESCE(s.sale_type, '') <> 'quotation'
        AND COALESCE(s.payment_type, '') <> 'quotation'
   )
   SELECT id, created_at, net_total, paid_at_sale, collected,
-         greatest(0, round(net_total - paid_at_sale - collected, 2)) AS due
+         greatest(0, round(net_total - paid_at_sale - collected, 2)) AS due, bill_no
     FROM b
    WHERE NOT p_only_open OR round(net_total - paid_at_sale - collected, 2) > 0
    ORDER BY created_at, id;
 $$;
 
--- ---------------------------------------------------------------------
--- Record one payment from a customer, split across bills (oldest first is the
--- caller's choice) plus an optional amount not tied to any bill (advance /
--- old dues). Atomic and idempotent: repeating a call with the same
--- p_client_ref returns the first result without saving anything again.
---
--- p_allocations: [{"sale_id": 12, "amount": 500}, ...]
--- Returns: { success, already_recorded, total_paid, prev_balance, new_balance,
---            bills: [{sale_id, net_total, paid_before, paid_now, due}] }
--- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.record_bill_payment(
   p_customer_id     integer,
   p_allocations     jsonb,
@@ -107,14 +102,12 @@ DECLARE
   v_bills     jsonb := '[]'::jsonb;
   v_seen      integer[] := '{}';
 BEGIN
-  -- Customer is read through RLS: a session of another shop sees nothing.
   SELECT shop_id, COALESCE(outstanding_balance, 0) INTO v_shop_id, v_prev
     FROM customers WHERE id = p_customer_id FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Customer not found' USING ERRCODE = 'P0002';
   END IF;
 
-  -- Same request twice (retry after a lost response): report, don't repeat.
   PERFORM pg_advisory_xact_lock(hashtext(v_ref::text));
   IF EXISTS (SELECT 1 FROM customer_payments WHERE batch_ref = v_ref) THEN
     SELECT COALESCE(sum(abs(amount)), 0) INTO v_total FROM customer_payments WHERE batch_ref = v_ref;
@@ -145,26 +138,25 @@ BEGIN
     END IF;
     v_seen := v_seen || v_sale_id;
 
-    -- Lock the bill so two people can't both pay off the same balance.
     PERFORM 1 FROM sales WHERE id = v_sale_id AND customer_id = p_customer_id FOR UPDATE;
     SELECT * INTO v_bill FROM customer_bills_due(p_customer_id, false) b WHERE b.sale_id = v_sale_id;
     IF NOT FOUND THEN
       RAISE EXCEPTION 'Bill % does not belong to this customer', v_sale_id USING ERRCODE = 'P0002';
     END IF;
     IF v_amount > v_bill.due + 0.009 THEN
-      RAISE EXCEPTION 'Bill % only has Rs % left to pay', v_sale_id, v_bill.due USING ERRCODE = '22023';
+      RAISE EXCEPTION 'Bill % only has Rs % left to pay', v_bill.bill_no, v_bill.due USING ERRCODE = '22023';
     END IF;
 
     INSERT INTO customer_payments
       (shop_id, customer_id, sale_id, amount, payment_type, note, bill_number, payment_mode, transaction_ref, batch_ref, created_at)
     VALUES
       (v_shop_id, p_customer_id, v_sale_id, v_amount, 'payment',
-       COALESCE(v_note, 'Payment against bill #' || right(v_sale_id::text, 8)),
-       right(v_sale_id::text, 8), v_mode, v_tref, v_ref, v_at);
+       COALESCE(v_note, 'Payment against bill #' || v_bill.bill_no),
+       v_bill.bill_no, v_mode, v_tref, v_ref, v_at);
 
     v_total := v_total + v_amount;
     v_bills := v_bills || jsonb_build_object(
-      'sale_id', v_sale_id, 'net_total', v_bill.net_total,
+      'sale_id', v_sale_id, 'bill_no', v_bill.bill_no, 'net_total', v_bill.net_total,
       'paid_before', v_bill.paid_at_sale + v_bill.collected,
       'paid_now', v_amount, 'due', round(v_bill.due - v_amount, 2));
   END LOOP;

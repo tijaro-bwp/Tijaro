@@ -13,7 +13,11 @@ import { printHTML } from '../utils/printUtils'
 import { getPricingConfig, getShopSettings, isWholesaleEnabled, getUnitPrice, normalizeTier } from '../utils/businessPresets'
 import { BRAND } from '../config/brand.js'
 import { fillPortalLink, createBillLink } from '../services/portalApi'
-import { resolveBillTemplate, fillTemplate, waPhone, openWhatsApp } from '../utils/billMessages'
+import { resolveBillTemplate, fillTemplate, waPhone, openWhatsApp, DEFAULT_DELIVERY_TEMPLATE } from '../utils/billMessages'
+import { buildDeliverySlipHTML } from '../utils/deliverySlip'
+
+// Delivery columns (sql/pos_modes_migration.sql): dropped when an older database lacks them.
+const DELIVERY_COLUMNS = ['channel', 'delivery_status', 'delivery_address', 'delivery_note', 'loader_name', 'dispatched_at']
 const PAKISTANI_PAYMENT_PROVIDERS = [
   { id: 'jazzcash', name: 'JazzCash', icon: '📱' },
   { id: 'easypaisa', name: 'Easypaisa', icon: '🟢' },
@@ -85,6 +89,26 @@ function POS() {
   const [discountMode, setDiscountMode] = useState('fixed') // 'fixed' | 'percent'
   const [discountPercent, setDiscountPercent] = useState('')
   const [saleType, setSaleType] = useState('sale')
+
+  // ── Counter / Delivery mode (docs/POS_MODES.md) ──
+  // Counter: customer at the counter, pays now. Delivery: a shop customer's
+  // order that leaves with a loader; it is billed now and paid on return.
+  const posModeKey = `pos_mode_${user?.shop_id || ''}`
+  const [posMode, setPosModeState] = useState(() => {
+    try { return localStorage.getItem(posModeKey) === 'delivery' ? 'delivery' : 'counter' } catch { return 'counter' }
+  })
+  const setPosMode = (m) => {
+    setPosModeState(m)
+    try { localStorage.setItem(posModeKey, m) } catch { /* not persisted */ }
+  }
+  const isDelivery = posMode === 'delivery' && saleType === 'sale'
+  const [delivery, setDelivery] = useState({ address: '', note: '', loader: '' })
+  const [customerPrompt, setCustomerPrompt] = useState('') // why a customer must be chosen
+  const customerSelectRef = useRef(null)
+  const loadersKey = `pos_loaders_${user?.shop_id || ''}`
+  const [recentLoaders, setRecentLoaders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(loadersKey) || '[]') } catch { return [] }
+  })
 
   const subtotal = cart.reduce((sum, i) => sum + i.custom_price * i.qty, 0)
   const rawDiscount = discountMode === 'percent'
@@ -168,13 +192,9 @@ function POS() {
 
   // Keyboard shortcut: F4 triggers Charge / Tender Sheet, Escape closes it
   useEffect(() => {
+    // F4 itself is handled in the main shortcut handler below (handling it in
+    // both places toggled the sheet twice, i.e. not at all).
     const handlePOSKeyShortcuts = (e) => {
-      if (e.key === 'F4') {
-        e.preventDefault()
-        if (cart.length > 0 && saleType === 'sale') {
-          setShowTenderSheet(prev => !prev)
-        }
-      }
       if (e.key === 'Escape' && showTenderSheet) {
         e.preventDefault()
         setShowTenderSheet(false)
@@ -533,10 +553,17 @@ function POS() {
       } else if (e.key === 'F4') {
         e.preventDefault()
         if (cart.length > 0) {
-          setShowTenderSheet(prev => !prev)
-          setPaymentType('cash')
-          if (!receivedAmount) setReceivedAmount(total.toString())
+          if (showTenderSheet) setShowTenderSheet(false)
+          else if (isDelivery && !customerId) askForCustomer('Choose the customer this delivery is for.')
+          else {
+            setShowTenderSheet(true)
+            setPaymentType('cash')
+            if (!receivedAmount) setReceivedAmount(total.toString())
+          }
         }
+      } else if (e.key === 'F7') {
+        e.preventDefault()
+        setPosMode(posMode === 'delivery' ? 'counter' : 'delivery')
       } else if (e.key === 'F9' || (e.ctrlKey && e.key === 'Enter')) {
         e.preventDefault()
         if (cart.length > 0 && !saving) {
@@ -560,7 +587,7 @@ function POS() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [total, cart, saving, showTenderSheet, showPaymentModal, showQuickView, showBrandDiscount, showSaveCustomer, showQuotationSearch, showHeldCarts, lastReceipt, search, receivedAmount, wholesaleEnabled, isWholesale, priceTier, products])
+  }, [total, cart, saving, showTenderSheet, showPaymentModal, showQuickView, showBrandDiscount, showSaveCustomer, showQuotationSearch, showHeldCarts, lastReceipt, search, receivedAmount, wholesaleEnabled, isWholesale, priceTier, products, posMode, isDelivery, customerId, delivery, paymentType, payments, discount])
 
   const categoryNameMap = categories.reduce((acc, c) => {
     acc[String(c.id)] = c.name
@@ -654,6 +681,10 @@ function POS() {
 
   const handleCustomerChange = (id) => {
     setCustomerId(id)
+    if (id) setCustomerPrompt('')
+    // Delivery address defaults to the customer's address.
+    const picked = id ? customers.find(c => String(c.id) === String(id)) : null
+    setDelivery(d => ({ ...d, address: picked?.address || '' }))
     if (!wholesaleEnabled || !id) return
     const c = customers.find(c => String(c.id) === String(id))
     if (c?.price_tier === 'wholesale') applyTier('wholesale')
@@ -683,9 +714,47 @@ function POS() {
   const removeFromCart = (id) => setCart(prev => prev.filter(i => i.id !== id))
 
   const clearCart = () => {
-    setCart([]); setCustomerId(''); setWalkInName(''); setPaymentType('cash'); setReceivedAmount(''); setPayments([]); setDiscount(0); setDiscountPercent(''); setDiscountMode('fixed')
+    setCart([]); setCustomerId(''); setWalkInName(''); setPayments([]);
+    // Delivery bills start as "Rs 0 paid now"; counter sales as cash in full.
+    if (posMode === 'delivery') { setPaymentType('credit'); setReceivedAmount('0') } else { setPaymentType('cash'); setReceivedAmount('') }
+    setDiscount(0); setDiscountPercent(''); setDiscountMode('fixed')
     setPriceTier(baseTier)
+    // The loader usually takes several bills: keep the name, clear the rest.
+    setDelivery(d => ({ address: '', note: '', loader: d.loader }))
+    setCustomerPrompt('')
   }
+
+  // A customer is required (delivery bill, or something left unpaid at the
+  // counter): close the tender sheet and point at the customer picker.
+  const askForCustomer = (reason) => {
+    setCustomerPrompt(reason)
+    setShowTenderSheet(false)
+    setTimeout(() => customerSelectRef.current?.focus(), 50)
+  }
+
+  const openTender = () => {
+    if (cart.length === 0) return
+    if (isDelivery && !customerId) { askForCustomer('Choose the customer this delivery is for.'); return }
+    setShowTenderSheet(true)
+  }
+
+  // Switching mode resets the payment to that mode's default (every layout,
+  // including those without the tender sheet).
+  useEffect(() => {
+    setPayments([])
+    if (isDelivery) { setPaymentType('credit'); setReceivedAmount('0') }
+    else { setPaymentType('cash'); setReceivedAmount('') }
+  }, [isDelivery])
+
+  // Delivery bills are usually paid when the loader comes back: open the
+  // tender sheet on "credit, Rs 0 now" (an advance can still be entered).
+  useEffect(() => {
+    if (showTenderSheet && isDelivery) {
+      setPayments([])
+      setPaymentType('credit')
+      setReceivedAmount('0')
+    }
+  }, [showTenderSheet, isDelivery])
 
   const handleSaveCustomer = async () => {
     const name = saveCustomerForm.name.trim()
@@ -876,8 +945,12 @@ function POS() {
       }
     }
 
-    if ((paymentType === 'credit' || totalPaid < total) && !customerId) {
-      alert('Balance amount (Credit) ke liye customer select karna zaroori hai!');
+    if (isDelivery && !customerId) {
+      askForCustomer('Choose the customer this delivery is for.')
+      return
+    }
+    if (saleType === 'sale' && (paymentType === 'credit' || totalPaid < total) && !customerId) {
+      askForCustomer(`Rs. ${Math.max(0, total - totalPaid).toLocaleString()} is left unpaid — choose or save the customer it belongs to.`)
       return
     }
 
@@ -912,7 +985,17 @@ function POS() {
       created_by: user.username,
       created_at: new Date().toISOString(),
       ...(wholesaleEnabled ? { price_tier: activeTier } : {}),
-      ...(saleType === 'sale' && prevBalance !== null ? { prev_balance: prevBalance } : {})
+      ...(saleType === 'sale' && prevBalance !== null ? { prev_balance: prevBalance } : {}),
+      // Delivery bill: out with the loader until it is marked delivered.
+      // (Counter bills rely on the column default, so older databases keep working.)
+      ...(isDelivery ? {
+        channel: 'delivery',
+        delivery_status: 'out',
+        delivery_address: delivery.address.trim() || null,
+        delivery_note: delivery.note.trim() || null,
+        loader_name: delivery.loader.trim() || null,
+        dispatched_at: new Date().toISOString(),
+      } : {})
     }
 
     // Include payment_details for split or online/ref metadata
@@ -946,6 +1029,7 @@ function POS() {
         delete fallbackSaleData.price_tier
         delete fallbackSaleData.client_ref
         delete fallbackSaleData.prev_balance
+        for (const k of DELIVERY_COLUMNS) delete fallbackSaleData[k]
         ;({ data: sale, error: saleError } = await supabase.from('sales').insert([fallbackSaleData]).select().single())
       }
 
@@ -1031,7 +1115,7 @@ function POS() {
     const tendered = receivedAmount !== '' ? Number(receivedAmount) : totalPaid
     const changeDueVal = (tendered > total && paymentType === 'cash') ? (tendered - total) : 0
 
-    setLastReceipt({
+    const receipt = {
       sale: finalSale,
       items: cart,
       customer,
@@ -1050,8 +1134,30 @@ function POS() {
         bill: total,
         paid: Math.min(total, totalPaid),
         newBalance: Math.round((prevBalance + balanceIncrease) * 100) / 100,
-      } : null
-    })
+      } : null,
+      delivery: isDelivery ? {
+        address: delivery.address.trim(),
+        note: delivery.note.trim(),
+        loader: delivery.loader.trim(),
+      } : null,
+    }
+    setLastReceipt(receipt)
+
+    // Counter sales print straight away when the shop uses Auto print
+    // (Settings → POS & Receipts). Delivery bills print from the receipt dialog
+    // (customer copy + delivery slip).
+    if (saleType === 'sale' && !isDelivery) {
+      let mode = form.print_mode
+      try { mode = JSON.parse(localStorage.getItem(`shop_settings_${user.shop_id}`) || '{}').print_mode || mode } catch { /* use form */ }
+      if (mode === 'auto') printHTML(buildReceiptHTML(receipt, false))
+    }
+
+    if (isDelivery && delivery.loader.trim()) {
+      const name = delivery.loader.trim()
+      const next = [name, ...recentLoaders.filter(l => l.toLowerCase() !== name.toLowerCase())].slice(0, 8)
+      setRecentLoaders(next)
+      try { localStorage.setItem(loadersKey, JSON.stringify(next)) } catch { /* not persisted */ }
+    }
 
     // Auto print for quotation
     if (saleType === 'quotation') {
@@ -1173,6 +1279,22 @@ function POS() {
 
   const printReceipt = () => {
     printHTML(buildReceiptHTML(lastReceipt, false))
+  }
+
+  // Delivery slip for the loader (who, where, what, how much to collect).
+  const printDeliverySlip = () => {
+    if (!lastReceipt?.delivery) return
+    const r = lastReceipt
+    printHTML(buildDeliverySlipHTML({
+      shop: { name: form.name, phone: form.phone },
+      sale: r.sale,
+      items: r.items,
+      customer: r.customer,
+      delivery: r.delivery,
+      total: r.total,
+      paid: r.account ? r.account.paid : Number(r.sale?.paid_amount) || 0,
+      account: r.account,
+    }))
   }
 
   const printQuotation = () => {
@@ -1503,15 +1625,43 @@ function POS() {
           </div>
         )}
 
+        {/* Counter / Delivery mode (F7) */}
+        {saleType === 'sale' && (
+          <div role="group" aria-label="Billing mode" className="shrink-0 grid grid-cols-2 gap-1 rounded-xl border border-line bg-surface-2 p-1">
+            <button
+              type="button"
+              aria-pressed={posMode === 'counter'}
+              onClick={() => setPosMode('counter')}
+              className={`min-h-9 rounded-lg text-xs font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${posMode === 'counter' ? 'bg-surface text-fg shadow-xs' : 'text-fg-muted hover:text-fg'}`}
+            >
+              🧾 Counter
+            </button>
+            <button
+              type="button"
+              aria-pressed={posMode === 'delivery'}
+              onClick={() => setPosMode('delivery')}
+              className={`min-h-9 rounded-lg text-xs font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${posMode === 'delivery' ? 'bg-primary text-white shadow-xs' : 'text-fg-muted hover:text-fg'}`}
+            >
+              🚚 Delivery <kbd className="hidden sm:inline ml-1 text-[10px] font-normal opacity-70">F7</kbd>
+            </button>
+          </div>
+        )}
+
         {/* Compact Customer Selector with Real-Time Credit Badge */}
-        <div className="flex flex-col gap-1 shrink-0 bg-surface/95 p-1.5 rounded-xl border border-primary-line/90 shadow-2xs">
+        <div className={`flex flex-col gap-1 shrink-0 bg-surface/95 p-1.5 rounded-xl border shadow-2xs ${customerPrompt ? 'border-danger ring-2 ring-danger-muted' : 'border-primary-line/90'}`}>
+          {customerPrompt && (
+            <p role="alert" className="px-1 text-xs font-bold text-danger-strong">⚠ {customerPrompt}</p>
+          )}
           <div className="flex items-center gap-1.5">
+            <label htmlFor="pos-customer" className="sr-only">Customer</label>
             <select
+              id="pos-customer"
+              ref={customerSelectRef}
               value={customerId}
               onChange={e => handleCustomerChange(e.target.value)}
               className="flex-1 min-w-0 px-2.5 py-1.5 bg-surface-2 border border-line rounded-lg text-xs font-semibold text-fg focus:outline-none focus:ring-2 focus:ring-primary shadow-xs truncate"
             >
-              <option value="">👤 Walk-in Customer</option>
+              <option value="">{isDelivery ? '🚚 Choose customer for delivery…' : '👤 Walk-in Customer'}</option>
               {customers.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.name}{wholesaleEnabled && c.price_tier === 'wholesale' ? ' [W]' : ''} {c.outstanding_balance > 0 ? `(Rs.${c.outstanding_balance} credit)` : ''}
@@ -1519,7 +1669,7 @@ function POS() {
               ))}
             </select>
 
-            {!customerId && (
+            {!customerId && !isDelivery && (
               <>
                 <input
                   type="text"
@@ -1560,6 +1710,49 @@ function POS() {
               </div>
             )
           })()}
+
+          {/* Delivery details: where it goes and who takes it */}
+          {isDelivery && (
+            <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+              <label className="col-span-2 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+                Deliver to
+                <input
+                  type="text"
+                  value={delivery.address}
+                  onChange={e => setDelivery(d => ({ ...d, address: e.target.value }))}
+                  placeholder="Address"
+                  maxLength={200}
+                  className="mt-0.5 w-full px-2 py-1.5 bg-surface border border-line rounded-lg text-xs font-medium normal-case tracking-normal text-fg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+                Loader
+                <input
+                  type="text"
+                  list="pos-loaders"
+                  value={delivery.loader}
+                  onChange={e => setDelivery(d => ({ ...d, loader: e.target.value }))}
+                  placeholder="Name"
+                  maxLength={60}
+                  className="mt-0.5 w-full px-2 py-1.5 bg-surface border border-line rounded-lg text-xs font-medium normal-case tracking-normal text-fg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <datalist id="pos-loaders">
+                  {recentLoaders.map(l => <option key={l} value={l} />)}
+                </datalist>
+              </label>
+              <label className="text-[10px] font-bold uppercase tracking-wider text-fg-muted">
+                Note
+                <input
+                  type="text"
+                  value={delivery.note}
+                  onChange={e => setDelivery(d => ({ ...d, note: e.target.value }))}
+                  placeholder="Optional"
+                  maxLength={200}
+                  className="mt-0.5 w-full px-2 py-1.5 bg-surface border border-line rounded-lg text-xs font-medium normal-case tracking-normal text-fg focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </label>
+            </div>
+          )}
         </div>
 
         {/* Cart Items — Expanded High-Density Scrollable View */}
@@ -1825,11 +2018,11 @@ function POS() {
               ) : (
                 <button
                   type="button"
-                  onClick={() => setShowTenderSheet(true)}
+                  onClick={openTender}
                   disabled={cart.length === 0}
                   className="flex-1 py-2.5 bg-gradient-to-r from-primary via-primary to-primary-hover hover:from-primary-hover hover:to-primary-hover text-white font-black text-sm rounded-xl transition shadow-lg shadow-primary-line active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <span>💳 Charge Rs. {total.toFixed(0)}</span>
+                  <span>{isDelivery ? `🚚 Delivery Bill Rs. ${total.toFixed(0)}` : `💳 Charge Rs. ${total.toFixed(0)}`}</span>
                   <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded font-mono font-normal">F4 →</span>
                 </button>
               )}
@@ -2118,7 +2311,7 @@ function POS() {
                     : 'bg-gradient-to-r from-primary to-primary hover:from-primary-hover hover:to-primary-hover shadow-primary-line'
                 }`}
               >
-                {saving ? 'Processing...' : saleType === 'quotation' ? '🖨️ Print Quote' : (isWholesale ? '✅ Complete Wholesale' : '✅ Complete Sale')}
+                {saving ? 'Processing...' : saleType === 'quotation' ? '🖨️ Print Quote' : isDelivery ? '🚚 Create Delivery Bill' : (isWholesale ? '✅ Complete Wholesale' : '✅ Complete Sale')}
               </button>
               {saleType === 'quotation' && cart.length > 0 && (
                 <button
@@ -2365,7 +2558,7 @@ function POS() {
                     : 'bg-gradient-to-r from-primary via-primary to-primary-hover hover:from-primary-hover hover:to-primary-hover shadow-primary-line'
                 }`}
               >
-                {saving ? 'Processing...' : saleType === 'quotation' ? '🖨️ Quote' : (isWholesale ? '✅ Complete Wholesale' : '✅ Complete Sale')}
+                {saving ? 'Processing...' : saleType === 'quotation' ? '🖨️ Quote' : isDelivery ? '🚚 Delivery Bill' : (isWholesale ? '✅ Complete Wholesale' : '✅ Complete Sale')}
               </button>
             </div>
           </div>
@@ -2606,7 +2799,7 @@ function POS() {
                 disabled={saving || cart.length === 0}
                 className="flex-1 py-3 bg-gradient-to-r from-success to-success hover:from-success-hover hover:to-success-hover text-white font-black text-sm rounded-xl transition shadow-lg shadow-success-line active:scale-[0.99] disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                {saving ? 'Processing...' : `✅ Complete ${isWholesale ? 'Wholesale ' : ''}Sale (Rs. ${total.toFixed(0)})`}
+                {saving ? 'Processing...' : isDelivery ? `🚚 Create Delivery Bill (Rs. ${total.toFixed(0)})` : `✅ Complete ${isWholesale ? 'Wholesale ' : ''}Sale (Rs. ${total.toFixed(0)})`}
               </button>
             </div>
           </div>
@@ -2753,8 +2946,13 @@ function POS() {
           <div className="bg-surface rounded-2xl shadow-2xl p-4 sm:p-6 w-full max-w-sm">
             <div className="text-center mb-4">
               <div className="text-4xl mb-1">✅</div>
-              <h2 className="text-xl font-bold text-fg">Sale Complete!</h2>
-              <p className="text-fg-muted text-sm">{lastReceipt.paymentType === 'credit' ? '📒 Credit sale' : '💵 Cash sale'}</p>
+              <h2 className="text-xl font-bold text-fg">{lastReceipt.delivery ? 'Delivery bill created' : 'Sale Complete!'}</h2>
+              <p className="text-fg-muted text-sm">
+                {lastReceipt.sale?.invoice_number ? <span className="font-mono font-bold text-fg-2">#{lastReceipt.sale.invoice_number} · </span> : null}
+                {lastReceipt.delivery
+                  ? `🚚 Out for delivery${lastReceipt.delivery.loader ? ` with ${lastReceipt.delivery.loader}` : ''}`
+                  : (lastReceipt.paymentType === 'credit' ? '📒 Credit sale' : '💵 Cash sale')}
+              </p>
               {form.logo_url && (
                 <div className="mt-2 flex justify-center">
                   <img src={form.logo_url} alt="Logo Preview" className="h-10 object-contain opacity-50 sepia-[.5]" />
@@ -2790,7 +2988,10 @@ function POS() {
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex gap-3">
-                <button onClick={printReceipt} className="flex-1 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition">🖨️ Print</button>
+                <button onClick={printReceipt} className="flex-1 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition">🖨️ {lastReceipt.delivery ? 'Bill' : 'Print'}</button>
+                {lastReceipt.delivery && (
+                  <button onClick={printDeliverySlip} className="flex-1 py-2 bg-surface border border-line-strong hover:bg-surface-3 text-fg-2 rounded-lg font-medium transition">🚚 Slip</button>
+                )}
                 {lastReceipt.customer?.phone && (
                   <button
                     onClick={async (e) => {
@@ -2800,7 +3001,7 @@ function POS() {
                       const formattedPhone = waPhone(lastReceipt.customer.phone)
                       const acc = lastReceipt.account
                       const paidNow = acc ? acc.paid : Math.min(lastReceipt.total, Number(lastReceipt.sale?.paid_amount) || 0)
-                      const template = resolveBillTemplate(form.wa_bill_template)
+                      const template = lastReceipt.delivery ? DEFAULT_DELIVERY_TEMPLATE : resolveBillTemplate(form.wa_bill_template)
                       let msg = ''
                       try {
                         // No-login link to this bill (only for bills saved online).
@@ -2808,7 +3009,7 @@ function POS() {
                         msg = fillTemplate(fillPortalLink(template, { portal_slug: form.portal_slug, portal_enabled: form.portal_enabled }), {
                           name: lastReceipt.customer.name || 'Customer',
                           shopName: form.name || 'our shop',
-                          id: String(lastReceipt.sale.id).slice(-8),
+                          id: lastReceipt.sale.invoice_number || String(lastReceipt.sale.id).slice(-8),
                           amount: lastReceipt.total,
                           billTotal: lastReceipt.total,
                           paidNow,
@@ -2816,11 +3017,12 @@ function POS() {
                           previousBalance: acc?.previous,
                           newBalance: acc?.newBalance,
                           billLink,
+                          loader: lastReceipt.delivery?.loader,
                         })
 
                         const billHtml = buildReceiptHTML(lastReceipt, false)
                         const pdfBlob = await generateBillPDF(billHtml)
-                        const invoiceId = String(lastReceipt.sale.id).slice(-8)
+                        const invoiceId = lastReceipt.sale.invoice_number || String(lastReceipt.sale.id).slice(-8)
                         await shareOrDownloadPDF(pdfBlob, `bill-${invoiceId}.pdf`, formattedPhone, msg)
                       } catch (err) {
                         console.error('PDF share failed:', err)

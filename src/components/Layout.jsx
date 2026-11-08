@@ -7,7 +7,7 @@ import {
   LayoutDashboard, ShoppingCart, Package, Layers, Boxes,
   Users, BookOpen, MessageSquare, Receipt, Truck,
   ShoppingBag, History, Wallet, BarChart3, UserCog,
-  Settings as SettingsIcon, Trash2, LifeBuoy, Lock, Store, Sun, Moon
+  Settings as SettingsIcon, Trash2, LifeBuoy, Lock, Store, Sun, Moon, PackageCheck
 } from 'lucide-react'
 import { useTheme } from '../context/ThemeContext'
 import { BRAND } from '../config/brand.js'
@@ -265,6 +265,9 @@ function Layout({ children }) {
             )}
             {hasAccess('customers', ['admin', 'manager', 'cashier']) && (
               <NavItem to="/customer-ledger" icon={<BookOpen size={18} />} label="Customer Ledger" active={location.pathname === '/customer-ledger'} locked={!hasFeature('customer_ledger')} onClick={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} />
+            )}
+            {hasAccess('customers', ['admin', 'manager', 'cashier']) && (
+              <NavItem to="/deliveries" icon={<PackageCheck size={18} />} label="Deliveries" active={location.pathname === '/deliveries'} onClick={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} />
             )}
             {hasAccess('customers', ['admin', 'manager', 'cashier']) && (
               <NavItem to="/whatsapp" icon={<MessageSquare size={18} />} label="WhatsApp Reminders" active={location.pathname === '/whatsapp'} locked={!hasFeature('whatsapp')} onClick={() => setSidebarOpen(false)} collapsed={sidebarCollapsed} />

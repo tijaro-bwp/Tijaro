@@ -21,6 +21,7 @@ const SupplierLedger = lazy(() => import('./pages/SupplierLedger'))
 const Customers = lazy(() => import('./pages/Customers'))
 const CustomerLedger = lazy(() => import('./pages/CustomerLedger'))
 const CustomerLedgerOverview = lazy(() => import('./pages/CustomerLedgerOverview'))
+const Deliveries = lazy(() => import('./pages/Deliveries'))
 const Sales = lazy(() => import('./pages/Sales'))
 const Expenses = lazy(() => import('./pages/Expenses'))
 const Users = lazy(() => import('./pages/Users'))
@@ -102,6 +103,7 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute><Layout><Dashboard /></Layout></ProtectedRoute>} />
             <Route path="/pos" element={<ProtectedRoute requiredModule="pos" allowedRoles={['admin', 'manager', 'cashier']}><Layout><POS /></Layout></ProtectedRoute>} />
             <Route path="/customers" element={<ProtectedRoute requiredModule="customers" allowedRoles={['admin', 'manager', 'cashier']}><Layout><Customers /></Layout></ProtectedRoute>} />
+            <Route path="/deliveries" element={<ProtectedRoute requiredModule="customers" allowedRoles={['admin', 'manager', 'cashier']}><Layout><Deliveries /></Layout></ProtectedRoute>} />
             <Route path="/customers/:id" element={<ProtectedRoute requiredModule="customers" allowedRoles={['admin', 'manager', 'cashier']}><Layout><CustomerLedger /></Layout></ProtectedRoute>} />
             <Route path="/customer-ledger" element={<ProtectedRoute requiredModule="customers" allowedRoles={['admin', 'manager', 'cashier']}><Layout><CustomerLedgerOverview /></Layout></ProtectedRoute>} />
             <Route path="/sales" element={<ProtectedRoute requiredModule="sales" allowedRoles={['admin', 'manager', 'accountant']}><Layout><Sales /></Layout></ProtectedRoute>} />

@@ -84,7 +84,7 @@ function CustomerLedger() {
                     payment_type: s.payment_type,
                     amount: s.total_amount - (s.discount || 0),
                     paid_amount: s.paid_amount || 0,
-                    note: `Invoice #${String(s.id).slice(-8)}`,
+                    note: `Invoice #${s.invoice_number || String(s.id).slice(-8)}`,
                     items: s.sale_items || []
                 })),
                 ...(payments || []).map(p => ({
@@ -160,7 +160,7 @@ function CustomerLedger() {
                         payment_type: s.payment_type,
                         amount: s.total_amount - (s.discount || 0),
                         paid_amount: s.paid_amount || 0,
-                        note: `Invoice #${String(s.id).slice(-8)}`,
+                        note: `Invoice #${s.invoice_number || String(s.id).slice(-8)}`,
                         items: lItems.filter(i => i.sale_id === s.id)
                     })),
                     ...myPayments.map(p => ({

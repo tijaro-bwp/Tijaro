@@ -387,6 +387,7 @@ interface SaleRow {
   paid_amount: number | null
   payment_type: string | null
   sale_type: string | null
+  invoice_number?: string | null
 }
 
 interface PaymentRow {
@@ -399,12 +400,13 @@ interface PaymentRow {
   payment_mode: string | null
 }
 
-const SALE_COLS = 'id, created_at, total_amount, discount, paid_amount, payment_type, sale_type'
+const SALE_COLS = 'id, created_at, total_amount, discount, paid_amount, payment_type, sale_type, invoice_number'
 const PAYMENT_COLS = 'id, created_at, amount, payment_type, note, bill_number, payment_mode'
 
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 const isQuotation = (s: SaleRow) => s.sale_type === 'quotation' || s.payment_type === 'quotation'
-const billNo = (id: number) => String(id).slice(-8)
+// The shop's own bill number (INV-0042) when set, else the last 8 digits of the id.
+const billNo = (s: { id: number; invoice_number?: string | null }) => s.invoice_number || String(s.id).slice(-8)
 const saleNet = (s: SaleRow) => num(s.total_amount) - num(s.discount)
 // Unpaid part at the time of sale. Ledger math uses this (later payments are
 // separate ledger credits); what a bill still owes is saleDue - collected.
@@ -482,7 +484,7 @@ async function buildLedger(ctx: CustomerCtx): Promise<{ entries: LedgerEntry[]; 
       const due = saleDue(sale)
       running += due
       return {
-        kind: 'bill', id: sale.id, date: sale.created_at, description: `Bill #${billNo(sale.id)}`,
+        kind: 'bill', id: sale.id, date: sale.created_at, description: `Bill #${billNo(sale)}`,
         debit: due, credit: 0, amount: saleNet(sale), paid_at_sale: num(sale.paid_amount),
         payment_mode: sale.payment_type, balance: running,
       }
@@ -577,7 +579,7 @@ async function bills(ctx: CustomerCtx, body: Record<string, unknown>) {
       bills: rows.map((s) => {
         const later = collected.get(s.id) ?? 0
         return {
-          id: s.id, bill_no: billNo(s.id), date: s.created_at,
+          id: s.id, bill_no: billNo(s), date: s.created_at,
           subtotal: num(s.total_amount), discount: num(s.discount), total: saleNet(s),
           paid: round2(num(s.paid_amount) + later), due: round2(Math.max(0, saleDue(s) - later)),
           payment_mode: s.payment_type,
@@ -599,7 +601,7 @@ async function billDetail(shopId: number, sale: SaleRow) {
   if (error) throw new HttpError(500, 'Could not load bill')
   const later = payments.reduce((a, p) => a + p.amount, 0)
   return {
-    id: sale.id, bill_no: billNo(sale.id), date: sale.created_at, payment_mode: sale.payment_type,
+    id: sale.id, bill_no: billNo(sale), date: sale.created_at, payment_mode: sale.payment_type,
     subtotal: num(sale.total_amount), discount: num(sale.discount), total: saleNet(sale),
     paid_at_sale: num(sale.paid_amount),
     paid: round2(num(sale.paid_amount) + later),

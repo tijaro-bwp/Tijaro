@@ -916,7 +916,7 @@ function Settings() {
                 maxLength={10}
               />
               <p className="text-xs text-fg-subtle mt-1">
-                Invoices will appear as: <span className="font-mono font-bold text-primary-fg">{form.invoice_prefix || 'INV'}-00001234</span>
+                New bills are numbered per shop: <span className="font-mono font-bold text-primary-fg">{(form.invoice_prefix || 'INV').replace(/-/g, '')}-0001</span>, <span className="font-mono font-bold text-primary-fg">{(form.invoice_prefix || 'INV').replace(/-/g, '')}-0002</span>… Changing the prefix affects new bills only.
               </p>
             </div>
           </div>

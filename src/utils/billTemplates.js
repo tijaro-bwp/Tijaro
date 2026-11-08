@@ -74,7 +74,7 @@ function customerLine(r) {
 function template1(r, isQuotation, s, isPurchase = false) {
   const isThermal = s.print_size !== 'a4'
   const footer = isPurchase ? '' : (isQuotation ? safeStr(s.quotation_footer, 'یہ صرف قیمت نامہ ہے') : safeStr(s.invoice_footer, 'شکریہ! دوبارہ تشریف لائیں'))
-  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`
+  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : ((!isQuotation && r.sale?.invoice_number) || `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`)
   const dateStr = r.sale?.created_at ? new Date(r.sale.created_at).toLocaleString('en-PK') : new Date().toLocaleString('en-PK')
   const remaining = r.sale ? safeNum(r.total) - safeNum(r.sale.paid_amount) : 0
 
@@ -163,7 +163,7 @@ function template1(r, isQuotation, s, isPurchase = false) {
 function template2(r, isQuotation, s, isPurchase = false) {
   const isThermal = s.print_size !== 'a4'
   const footer = isPurchase ? '' : (isQuotation ? safeStr(s.quotation_footer, 'یہ صرف قیمت نامہ ہے') : safeStr(s.invoice_footer, 'شکریہ! دوبارہ تشریف لائیں'))
-  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`
+  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : ((!isQuotation && r.sale?.invoice_number) || `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`)
   const dateStr = r.sale?.created_at ? new Date(r.sale.created_at).toLocaleString('en-PK') : new Date().toLocaleString('en-PK')
   const remaining = r.sale ? safeNum(r.total) - safeNum(r.sale.paid_amount) : 0
 
@@ -275,7 +275,7 @@ function template2(r, isQuotation, s, isPurchase = false) {
 function template3(r, isQuotation, s, isPurchase = false) {
   const isThermal = s.print_size !== 'a4'
   const footer = isPurchase ? '' : (isQuotation ? safeStr(s.quotation_footer, 'یہ صرف قیمت نامہ ہے') : safeStr(s.invoice_footer, 'شکریہ! دوبارہ تشریف لائیں'))
-  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`
+  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : ((!isQuotation && r.sale?.invoice_number) || `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`)
   const dateStr = r.sale?.created_at ? new Date(r.sale.created_at).toLocaleString('en-PK') : new Date().toLocaleString('en-PK')
   const remaining = r.sale ? safeNum(r.total) - safeNum(r.sale.paid_amount) : 0
 
@@ -441,7 +441,7 @@ function template3(r, isQuotation, s, isPurchase = false) {
 function template4(r, isQuotation, s, isPurchase = false) {
   const isThermal = s.print_size !== 'a4'
   const footer = isPurchase ? '' : (isQuotation ? safeStr(s.quotation_footer, 'یہ صرف قیمت نامہ ہے') : safeStr(s.invoice_footer, 'شکریہ! دوبارہ تشریف لائیں'))
-  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`
+  const invoiceNo = isPurchase ? `PR-${String(r.sale?.id ?? Date.now()).slice(-8)}` : ((!isQuotation && r.sale?.invoice_number) || `${isQuotation ? 'QT' : (s.invoice_prefix || 'INV')}-${String(r.sale?.id ?? Date.now()).slice(-8)}`)
   const dateStr = r.sale?.created_at ? new Date(r.sale.created_at).toLocaleString('en-PK') : new Date().toLocaleString('en-PK')
   const remaining = r.sale ? safeNum(r.total) - safeNum(r.sale.paid_amount) : 0
 
@@ -677,7 +677,7 @@ export function buildSalesReportHTML(sales, saleItems, period, shopSettings) {
     const itemCount = items.reduce((a, i) => a + safeNum(i.quantity || i.qty), 0)
     return `<tr>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:12px;color:#64748b">${new Date(sale.created_at).toLocaleString('en-PK')}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600">INV-${String(sale.id).slice(-8)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-weight:600">${sale.invoice_number || `INV-${String(sale.id).slice(-8)}`}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0">${sale.customer_name || 'Walk-in'}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:center">${itemCount}</td>
       <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;text-align:right;font-size:12px;color:#64748b">${sale.payment_method || 'cash'}</td>

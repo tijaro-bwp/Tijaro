@@ -45,7 +45,7 @@ export function buildPaymentReceiptHTML({ shop, customer, result, mode, ref, dat
   <hr/>
   ${row('Amount received', `Rs. ${fmtRs(result?.total_paid)}`, 'b big')}
   ${bills.map((b) => `<div class="bill">
-      ${row(`<b>Bill #${esc(billNo(b.sale_id))}</b>`, `Rs. ${fmtRs(b.net_total)}`)}
+      ${row(`<b>Bill #${esc(b.bill_no || billNo(b.sale_id))}</b>`, `Rs. ${fmtRs(b.net_total)}`)}
       ${row('Paid earlier', `Rs. ${fmtRs(b.paid_before)}`)}
       ${row('Paid now', `Rs. ${fmtRs(b.paid_now)}`)}
       ${row(Number(b.due) > 0 ? 'Remaining on bill' : 'Bill status', Number(b.due) > 0 ? `Rs. ${fmtRs(b.due)}` : 'PAID ✓', 'b')}

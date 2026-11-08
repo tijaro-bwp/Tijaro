@@ -365,7 +365,8 @@ function Sales() {
 
   const filtered = sales.filter(s => {
     const matchSearch = (s.customers?.name || s.customer_name || 'walk-in').toLowerCase().includes(search.toLowerCase()) ||
-      String(s.id).toLowerCase().includes(search.toLowerCase())
+      String(s.id).toLowerCase().includes(search.toLowerCase()) ||
+      String(s.invoice_number || '').toLowerCase().includes(search.toLowerCase())
     const matchType = typeFilter !== 'all' ? s.sale_type === typeFilter : true
     const sPay = (s.payment_type || s.payment_method || 'cash').toLowerCase()
     const matchPayment = paymentFilter !== 'all' ? (
@@ -539,7 +540,7 @@ function Sales() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="font-mono text-xs font-bold text-fg-muted">
-                        {sale.sale_type === 'quotation' ? 'QT-' : '#'}{String(sale.id).slice(-8)}
+                        {sale.sale_type === 'quotation' ? `QT-${String(sale.id).slice(-8)}` : `#${sale.invoice_number || String(sale.id).slice(-8)}`}
                       </p>
                       <p className="mt-1 truncate font-bold text-fg">
                         {sale.customers?.name || sale.customer_name || 'Walk-in'}
@@ -587,7 +588,7 @@ function Sales() {
                     <tr key={sale.id} className={`hover:bg-surface-2 ${selected.includes(sale.id) ? 'bg-primary-soft' : ''}`}>
                       <td className="px-4 py-3"><input type="checkbox" checked={selected.includes(sale.id)} onChange={() => toggleSelect(sale.id)} className="w-4 h-4 rounded" /></td>
                       <td className="px-4 py-3 font-mono text-xs text-fg-3">
-                        {sale.sale_type === 'quotation' ? 'QT-' : '#'}{String(sale.id).slice(-8)}
+                        {sale.sale_type === 'quotation' ? `QT-${String(sale.id).slice(-8)}` : `#${sale.invoice_number || String(sale.id).slice(-8)}`}
                       </td>
                       <td className="px-4 py-3 text-fg">
                         {sale.customers?.name || sale.customer_name || <span className="text-fg-subtle italic">Walk-in</span>}
@@ -629,8 +630,7 @@ function Sales() {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h2 className="text-lg font-bold text-fg">
-                      {selectedSale.sale_type === 'quotation' ? 'Quotation QT-' : 'Invoice #'}
-                      {String(selectedSale.id).slice(-8)}
+                      {selectedSale.sale_type === 'quotation' ? `Quotation QT-${String(selectedSale.id).slice(-8)}` : `Invoice #${selectedSale.invoice_number || String(selectedSale.id).slice(-8)}`}
                     </h2>
                     <p className="text-sm text-fg-muted">
                       {new Date(selectedSale.created_at).toLocaleString('en-PK')} |
